@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #172342;
+  background: #f7f9fe;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+.site-header { width: min(1120px, 100%); margin: 0 auto; padding: 30px 32px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: #172342; text-decoration: none; font-size: 22px; font-weight: 700; letter-spacing: -0.7px; }
+.brand-mark { display: grid; place-items: center; width: 34px; height: 36px; border-radius: 10px; color: white; background: #4d55d9; font-size: 24px; }
+.milestone { font-size: 13px; color: #68758c; }
+main { flex: 1; display: grid; place-items: center; padding: 32px 24px 52px; }
+.welcome { width: min(720px, 100%); text-align: center; padding: 40px 48px; background: #fff; border: 1px solid #e6eaf5; border-radius: 28px; box-shadow: 0 20px 70px #253b7510; }
+.status { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 30px; padding: 7px 12px; border: 1px solid #e1e5f7; border-radius: 30px; background: #f5f6ff; color: #525c97; font-size: 12px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #7279de; }
+.welcome-mark { position: relative; display: grid; place-items: center; margin: 0 auto 26px; width: 76px; height: 80px; border-radius: 23px; color: white; background: linear-gradient(145deg, #467be8, #6550d9); box-shadow: 0 10px 22px #4d55d92b; font-size: 48px; font-weight: 600; }
+.welcome-mark span { position: absolute; right: -9px; bottom: -5px; width: 28px; height: 28px; border: 3px solid white; border-radius: 50%; background: #dfe8ff; color: #4e58c7; font-size: 20px; line-height: 20px; }
+.eyebrow { color: #6773a0; font-size: 11px; letter-spacing: 2px; font-weight: 700; }
+h1 { margin: 14px 0 20px; font-size: clamp(32px, 5vw, 52px); line-height: 1.14; letter-spacing: -1.8px; }
+h1 span { color: #4f58d2; }
+.description { max-width: 440px; margin: 0 auto; color: #68758c; font-size: 16px; line-height: 1.8; }
+.progress-note { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 34px; padding-top: 26px; border-top: 1px solid #edf0f7; text-align: left; }
+.progress-note > span { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px; background: #f0f3fc; color: #5a64a4; font-size: 12px; font-weight: 700; }
+.progress-note p { margin: 0; color: #7b8499; font-size: 12px; line-height: 1.8; }
+.progress-note strong { color: #44516d; font-weight: 600; }
+footer { padding: 18px 24px 26px; text-align: center; color: #7e89a0; font-size: 12px; }
+footer span { margin: 0 8px; }
+a:focus-visible { outline: 3px solid #467be8; outline-offset: 5px; border-radius: 4px; }
+@media (max-width: 520px) {
+  .site-header { padding: 24px; }
+  .milestone { display: none; }
+  main { padding: 12px 16px 24px; }
+  .welcome { padding: 28px 22px; border-radius: 22px; }
+  .description { font-size: 15px; }
+}
