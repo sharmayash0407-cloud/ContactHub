@@ -209,3 +209,20 @@ No project license file is currently present. **No license has been selected or 
 - **Without a license:** default copyright restrictions apply; publishing source does not grant general permission to reuse or redistribute it. GitHub's terms still permit viewing and forking a public repository. See [GitHub's licensing guidance](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository).
 
 The repository owner's approval is required before adding a license. Dependencies retain their own separate licenses.
+
+## Optional development demo data
+
+The development-only [seed script](scripts/seed_contacts.py) generates exactly 500 fictional contacts using random seed `20261030`. From the project root:
+
+```powershell
+# Read-only preview (database must already exist):
+.\.venv\Scripts\python.exe scripts\seed_contacts.py
+# Explicitly back up and add 500 records:
+.\.venv\Scripts\python.exe scripts\seed_contacts.py --apply
+```
+
+Start the app once to initialize a fresh database before seeding. Close other editing sessions during import. The script preserves existing contacts, validates generated data using Flask's existing validator, inserts with parameterized SQL in one transaction, and verifies a SQLite backup before inserting. Backups are timestamped `.db` files under `backend/backups/`; both databases and backups are ignored by Git. `--database PATH` targets another existing local database for testing.
+
+Each record has a unique `[contacthub-seed-v1:NNN]` notes marker. If any marker already exists, both preview and apply refuse the operation, including after a partial dataset has been manually deleted. Do not remove the markers or rerun against the same data to create another batch. To repeat a clean demonstration, use a separate initialized test database. There is no automatic reset or deletion command.
+
+Names combine Indian and international name components; all identities and companies are fictional. Emails use example.com/org/net, phone values use the fictional North American `202-555-0100`–`0199` range (reused across records), 90 contacts are favorites (18%), and some phone/email/company fields are blank. Notes always retain the provenance marker. No external data or additional packages are used.
