@@ -31,23 +31,39 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
-def list_contacts(search=""):
+def list_contacts(search="", favorites_only=False):
     search = search.strip()
+    conditions = []
+    parameters = []
     if search:
-        # Escape LIKE's wildcard characters separately from binding SQL values.
+        # Bind SQL values and escape LIKE wildcards for literal partial matches.
         literal = search.replace("!", "!!").replace("%", "!%").replace("_", "!_")
         pattern = f"%{literal}%"
-        rows = get_db().execute(
-            """SELECT * FROM contacts
-               WHERE name LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!'
-                  OR email LIKE ? ESCAPE '!' OR company LIKE ? ESCAPE '!'
-               ORDER BY name COLLATE NOCASE, id""",
-            (pattern, pattern, pattern, pattern),
-        ).fetchall()
-    else:
-        # Keep the original unfiltered API order for existing clients.
-        rows = get_db().execute("SELECT * FROM contacts ORDER BY id").fetchall()
+        conditions.append("""(name LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!'
+                              OR email LIKE ? ESCAPE '!' OR company LIKE ? ESCAPE '!')""")
+        parameters.extend([pattern] * 4)
+    if favorites_only:
+        conditions.append("favorite = ?")
+        parameters.append(1)
+    # Only fixed SQL fragments are combined; user values stay in parameters.
+    query = "SELECT * FROM contacts"
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY name COLLATE NOCASE, id" if conditions else " ORDER BY id"
+    rows = get_db().execute(query, parameters).fetchall()
     return [Contact.from_row(row) for row in rows]
+
+
+def set_favorite(contact_id, favorite):
+    if contact_id > 9223372036854775807:
+        return None
+    db = get_db()
+    with db:
+        cursor = db.execute(
+            "UPDATE contacts SET favorite = ?, updated_at = ? WHERE id = ?",
+            (favorite, timestamp(), contact_id),
+        )
+    return find_contact(contact_id) if cursor.rowcount else None
 
 
 def find_contact(contact_id):

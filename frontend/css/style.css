@@ -136,3 +136,12 @@ button:disabled { opacity: .6; cursor: wait; }
 #search-results { min-height: 18px; margin: 9px 0 0; color: #758098; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .directory-state p { overflow-wrap: anywhere; }
 @media (max-width: 350px) { .search-controls { flex-wrap: wrap; } .search-controls button { width: 100%; } }
+
+.sidebar nav { display: grid; gap: 8px; }
+.nav-link { margin: 0; min-height: 44px; background: transparent; color: #69748b; text-align: left; }
+.nav-link:hover { background: #f4f5fc; }
+.nav-link[aria-pressed="true"] { background: #eeefff; color: #5359c9; }
+.favorite-toggle { display: grid; place-items: center; margin: 0; min-width: 44px; min-height: 44px; padding: 8px; border: 1px solid #e9eaf1; border-radius: 10px; background: #fff; color: #828aa1; font-size: 24px; line-height: 1; }
+.favorite-toggle[aria-pressed="true"] { color: #aa741b; background: #fff8e8; border-color: #f1e5c6; }
+.favorite-toggle:hover { background: #f7f7fc; }
+@media (max-width: 760px) { .sidebar { flex-wrap: wrap; } .sidebar nav { display: flex; gap: 8px; width: 100%; } .nav-link { flex: 1; justify-content: center; } }

@@ -98,7 +98,7 @@ class Element {
   addEventListener(name, callback) { this.listeners[name] = callback; }
   set innerHTML(value) { throw new Error('Unsafe HTML insertion'); }
 }
-function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id }), deleteContact = async () => {}, timers = { setTimeout, clearTimeout }) {
+function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id }), deleteContact = async () => {}, timers = { setTimeout, clearTimeout }, setFavorite = async (id, favorite) => contact({ id, favorite })) {
   const elements = {};
   const document = {
     getElementById(id) { return elements[id] ||= new Element('div'); },
@@ -113,7 +113,7 @@ function render(fetchContacts, createContact = async () => contact(), updateCont
     }
   };
   vm.runInNewContext(appSource, { document, ...timers, window: {
-    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact, deleteContact } } });
+    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact, deleteContact, setFavorite } } });
   return elements;
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -144,8 +144,8 @@ test('cards sort by name, use literal text, show initials, fallback values and f
   assert.equal(cards[1].children[1].textContent, 'Zeta Example');
   assert.equal(cards[0].children[2].textContent, unsafe);
   assert.equal(cards[0].children[0].children[0].textContent, 'AE');
-  assert.equal(cards[0].children[0].children[1].attributes['aria-label'], 'Favorite contact');
-  assert.equal(cards[1].children[0].children.length, 1);
+  assert.equal(cards[0].children[0].children[1].attributes['aria-pressed'], 'true');
+  assert.equal(cards[1].children[0].children[1].attributes['aria-pressed'], 'false');
   assert.equal(cards[1].children[2].textContent, 'No company listed');
   assert.equal(cards[0].children[3].children[0].children[1].textContent, 'Not provided');
 });
@@ -395,7 +395,7 @@ test('valid Edit sends only selected ID and full data, reorders cards and preser
   assert.equal(elements['contact-count'].textContent, '2');
   const firstCard = elements['contact-list'].children[0].children[0];
   assert.equal(firstCard.children[1].textContent, 'Alpha Updated');
-  assert.equal(firstCard.children[0].children.length, 1);
+  assert.equal(firstCard.children[0].children[1].attributes['aria-pressed'], 'false');
   assert.match(elements['save-notice'].textContent, /updated successfully/);
   assert.equal(elements['contact-dialog'].open, false);
   assert.equal(editButton(elements).focused, true);
@@ -930,3 +930,184 @@ for (const operation of ['edit', 'delete']) {
     assert.equal(elements['state-title'].textContent, 'No matching contacts');
   });
 }
+const favoriteCardButton = (elements, index = 0) => elements['contact-list'].children[index].children[0].children[0].children[1];
+
+test('favorite PATCH sends only a strict boolean to the selected ID', async () => {
+  const api = apiContext(async (url, options) => {
+    assert.equal(url, '/api/contacts/42/favorite');
+    assert.equal(options.method, 'PATCH');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(options.body), { favorite: true });
+    return response({ contact: contact({ id: 42, favorite: true }) }, { status: 200 });
+  });
+  assert.equal((await api.setFavorite(42, true)).favorite, true);
+});
+for (const [label, reply] of [
+  ['404', response({}, { status: 404, ok: false })],
+  ['server', response({}, { status: 500, ok: false })],
+  ['HTML', response({}, { status: 200, headers: { get: () => 'text/html' } })],
+  ['missing contact', response({}, { status: 200 })],
+  ['wrong state', response({ contact: contact({ favorite: false }) }, { status: 200 })],
+  ['wrong ID', response({ contact: contact({ id: 2, favorite: true }) }, { status: 200 })],
+]) {
+  test(`favorite PATCH rejects ${label}`, async () => {
+    await assert.rejects(apiContext(async () => reply).setFavorite(1, true));
+  });
+}
+test('favorite PATCH validates types before any network request', async () => {
+  let calls = 0;
+  const api = apiContext(async () => { calls++; });
+  await assert.rejects(api.setFavorite(0, true));
+  await assert.rejects(api.setFavorite(1, 'true'));
+  assert.equal(calls, 0);
+});
+test('favorite PATCH propagates network failures', async () => {
+  await assert.rejects(apiContext(async () => { throw new TypeError('offline'); }).setFavorite(1, true));
+});
+
+test('GET combines URL-encoded search with backend favorite filtering', async () => {
+  const urls = [];
+  const api = apiContext(async (url) => { urls.push(url); return response({ contacts: [] }); });
+  await api.getContacts('a & %_', true);
+  await api.getContacts('', true);
+  await api.getContacts('', false);
+  assert.deepEqual(urls, ['/api/contacts?search=a%20%26%20%25_&favorite=true', '/api/contacts?favorite=true', '/api/contacts']);
+});
+
+for (const starting of [false, true]) {
+  test(`favorite toggle ${starting} to ${!starting} changes only after server confirmation`, async () => {
+    let saved = contact({ favorite: starting });
+    let resolvePatch;
+    let writes = 0;
+    const elements = render(async () => [saved], undefined, undefined, undefined, undefined,
+      (id, value) => { writes++; assert.equal(id, 1); assert.equal(value, !starting);
+        return new Promise((resolve) => { resolvePatch = () => { saved = contact({ favorite: value }); resolve(saved); }; }); });
+    await settle();
+    const button = favoriteCardButton(elements);
+    const pending = button.listeners.click();
+    await button.listeners.click();
+    assert.equal(writes, 1);
+    assert.equal(button.disabled, true);
+    assert.equal(editButton(elements).disabled, true);
+    assert.equal(deleteCardButton(elements).disabled, true);
+    assert.equal(button.attributes['aria-pressed'], String(starting));
+    resolvePatch();
+    await pending;
+    assert.equal(favoriteCardButton(elements).attributes['aria-pressed'], String(!starting));
+    assert.equal(favoriteCardButton(elements).focused, true);
+    assert.equal(elements['contact-count'].textContent, '1');
+  });
+}
+
+test('Favorites navigation preserves search and uses the backend flag with accurate counts', async () => {
+  const clock = searchClock();
+  const requests = [];
+  const elements = render(async (query, only) => { requests.push([query, only]); return only ? [contact({ favorite: true })] : []; },
+    undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'synthetic'); // Switching flushes the pending search once.
+  elements['nav-favorites'].listeners.click();
+  await settle(); clock.run();
+  assert.deepEqual(requests, [['', false], ['synthetic', true]]);
+  assert.equal(elements['contact-search'].value, 'synthetic');
+  assert.equal(elements['nav-favorites'].attributes['aria-pressed'], 'true');
+  assert.equal(elements['page-title'].textContent, 'Favorites');
+  assert.equal(elements['count-label'].textContent, 'Matching favorites');
+  assert.equal(elements['search-results'].textContent, '1 result for “synthetic” in Favorites');
+  elements['nav-all'].listeners.click(); await settle();
+  assert.deepEqual(requests.at(-1), ['synthetic', false]);
+});
+
+test('empty Favorites differs from search with no matching favorites', async () => {
+  const clock = searchClock();
+  const elements = render(async () => [], undefined, undefined, undefined, clock);
+  await settle(); elements['nav-favorites'].listeners.click(); await settle();
+  assert.equal(elements['state-title'].textContent, 'No favorites yet');
+  typeSearch(elements, 'missing'); clock.run(); await settle();
+  assert.equal(elements['state-title'].textContent, 'No matching favorites');
+  assert.equal(elements['contact-count'].textContent, '0');
+});
+
+test('unfavoriting in Favorites removes the card and focuses Favorites navigation', async () => {
+  let record = contact({ favorite: true });
+  const elements = render(async (query, only) => only && !record.favorite ? [] : [record], undefined, undefined, undefined, undefined,
+    async (id, value) => { record = contact({ favorite: value }); return record; });
+  await settle(); elements['nav-favorites'].listeners.click(); await settle();
+  await favoriteCardButton(elements).listeners.click();
+  assert.equal(elements['contact-count'].textContent, '0');
+  assert.equal(elements['state-title'].textContent, 'No favorites yet');
+  assert.equal(elements['nav-favorites'].focused, true);
+});
+
+for (const failure of ['network', 'server', 'missing']) {
+  test(`${failure} favorite failure keeps the previously confirmed pressed state`, async () => {
+    const elements = render(async () => [contact()], undefined, undefined, undefined, undefined, async () => {
+      const error = new Error(failure === 'missing' ? 'Contact no longer exists.' : 'private traceback');
+      error.missing = failure === 'missing'; throw error;
+    });
+    await settle(); const button = favoriteCardButton(elements);
+    await button.listeners.click();
+    assert.equal(button.attributes['aria-pressed'], 'false');
+    assert.equal(button.disabled, false);
+    assert.equal(button.focused, true);
+    assert.doesNotMatch(elements['save-notice'].textContent, /private traceback/);
+    assert.match(elements['save-notice'].textContent, failure === 'missing' ? /no longer exists/ : /couldn’t confirm/);
+  });
+}
+
+test('rapid view switching ignores stale favorites responses', async () => {
+  let resolveFavorites;
+  const elements = render((query, only) => only ? new Promise((resolve) => { resolveFavorites = resolve; }) : Promise.resolve([]));
+  await settle(); elements['nav-favorites'].listeners.click(); elements['nav-all'].listeners.click(); await settle();
+  resolveFavorites([contact({ favorite: true })]); await settle();
+  assert.equal(elements['page-title'].textContent, 'All Contacts');
+  assert.equal(elements['contact-count'].textContent, '0');
+});
+
+test('failed PATCH after navigation re-enables replacement buttons and preserves the active filter', async () => {
+  let rejectPatch;
+  const elements = render(async () => [contact()], undefined, undefined, undefined, undefined,
+    () => new Promise((resolve, reject) => { rejectPatch = reject; }));
+  await settle(); const pending = favoriteCardButton(elements).listeners.click();
+  elements['nav-favorites'].listeners.click(); await settle();
+  assert.equal(favoriteCardButton(elements).disabled, true);
+  rejectPatch(new Error('offline')); await pending;
+  assert.equal(favoriteCardButton(elements).disabled, false);
+  assert.equal(editButton(elements).disabled, false);
+  assert.equal(deleteCardButton(elements).disabled, false);
+  assert.equal(elements['page-title'].textContent, 'Favorites');
+});
+
+for (const operation of ['create', 'edit', 'delete', 'retry']) {
+  test(`${operation} refresh retains favorite-only filtering`, async () => {
+    const calls = [];
+    const elements = render(async (query, only) => { calls.push([query, only]); return [contact({ favorite: true })]; });
+    await settle(); elements['nav-favorites'].listeners.click(); await settle();
+    if (operation === 'retry') await elements['retry-button'].listeners.click();
+    else if (operation === 'delete') { deleteCardButton(elements).listeners.click(); await confirmDeletion(elements); }
+    else {
+      if (operation === 'create') { openForm(elements); elements['contact-name'].value = 'Synthetic New'; elements['contact-favorite'].checked = true; }
+      else editButton(elements).listeners.click();
+      await submit(elements);
+    }
+    assert.deepEqual(calls.at(-1), ['', true]);
+    assert.equal(elements['page-title'].textContent, 'Favorites');
+  });
+}
+test('confirmed favorite change followed by failed refresh preserves filter and reports recovery', async () => {
+  let reads = 0;
+  let record = contact();
+  const requests = [];
+  const elements = render(async (query, only) => {
+    requests.push([query, only]);
+    if (++reads === 3) throw new Error('offline');
+    return [record];
+  }, undefined, undefined, undefined, undefined, async (id, value) => { record = contact({ favorite: value }); return record; });
+  await settle(); elements['nav-favorites'].listeners.click(); await settle();
+  await favoriteCardButton(elements).listeners.click();
+  assert.match(elements['save-notice'].textContent, /Favorite updated successfully, but/);
+  assert.equal(elements['retry-button'].hidden, false);
+  await elements['retry-button'].listeners.click();
+  assert.deepEqual(requests.at(-1), ['', true]);
+  assert.equal(elements['save-notice'].textContent, 'Favorite updated successfully. Your contacts are up to date.');
+});

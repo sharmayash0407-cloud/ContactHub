@@ -14,6 +14,12 @@
   const searchResults = document.getElementById("search-results");
   const countLabel = document.getElementById("count-label");
   let activeQuery = "";
+  let favoritesOnly = false;
+  const allNavigation = document.getElementById("nav-all");
+  const favoritesNavigation = document.getElementById("nav-favorites");
+  const favoriteButtons = new Map();
+  const contactActions = new Map();
+  const pendingFavorites = new Set();
   let searchTimer = null;
   let loadVersion = 0;
   const editButtons = new Map();
@@ -36,12 +42,13 @@
     const avatar = element("span", "avatar", initials);
     avatar.setAttribute("aria-hidden", "true");
     top.append(avatar);
-    if (contact.favorite) {
-      const favorite = element("span", "favorite", "★");
-      favorite.setAttribute("role", "img");
-      favorite.setAttribute("aria-label", "Favorite contact");
-      top.append(favorite);
-    }
+    const favoriteButton = element("button", "favorite-toggle", contact.favorite ? "★" : "☆");
+    favoriteButton.type = "button";
+    favoriteButton.setAttribute("aria-label", `Favorite ${contact.name}`);
+    favoriteButton.setAttribute("aria-pressed", String(contact.favorite));
+    favoriteButton.disabled = pendingFavorites.has(contact.id);
+    favoriteButtons.set(contact.id, favoriteButton);
+    top.append(favoriteButton);
     card.append(top, element("h3", "contact-name", contact.name),
       element("p", "contact-company", contact.company || "No company listed"));
     const details = element("dl", "contact-details");
@@ -62,6 +69,9 @@
     deleteButton.setAttribute("aria-label", `Delete ${contact.name}`);
     deleteButton.addEventListener("click", () => openDelete(contact, deleteButton));
     card.append(deleteButton);
+    contactActions.set(contact.id, [editButton, deleteButton]);
+    editButton.disabled = deleteButton.disabled = pendingFavorites.has(contact.id);
+    favoriteButton.addEventListener("click", () => toggleFavorite(contact, favoriteButton, editButton, deleteButton));
     item.append(card);
     return item;
   }
@@ -78,26 +88,30 @@
     clearTimeout(searchTimer);
     searchTimer = null;
     const query = activeQuery;
+    const onlyFavorites = favoritesOnly;
     // A newer refresh wins if two GET requests finish out of order.
     const version = ++loadVersion;
     region.setAttribute("aria-label", "Contact directory");
     region.setAttribute("aria-busy", "true");
     count.textContent = "—";
-    countLabel.textContent = query ? "Matching contacts" : "Total contacts";
+    countLabel.textContent = onlyFavorites ? (query ? "Matching favorites" : "Favorite contacts") : (query ? "Matching contacts" : "Total contacts");
     searchResults.textContent = query ? "Searching contacts…" : "Loading contacts…";
     list.replaceChildren();
     showState("Loading your contacts…", "Getting your connections ready.");
     try {
-      const contacts = await window.ContactHubAPI.getContacts(query);
+      const contacts = await window.ContactHubAPI.getContacts(query, onlyFavorites);
       if (version !== loadVersion) return false;
       editButtons.clear();
+      favoriteButtons.clear();
+      contactActions.clear();
       contacts.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id);
       count.textContent = String(contacts.length);
       searchResults.textContent = query
-        ? `${contacts.length} ${contacts.length === 1 ? "result" : "results"} for “${query}”`
-        : `${contacts.length} ${contacts.length === 1 ? "contact" : "contacts"}`;
+        ? `${contacts.length} ${contacts.length === 1 ? "result" : "results"} for “${query}”${onlyFavorites ? " in Favorites" : ""}`
+        : `${contacts.length} ${onlyFavorites ? (contacts.length === 1 ? "favorite" : "favorites") : (contacts.length === 1 ? "contact" : "contacts")}`;
       if (contacts.length === 0) {
-        if (query) showState("No matching contacts", `No contacts match “${query}”. Try another search or clear the search.`);
+        if (query) showState(onlyFavorites ? "No matching favorites" : "No matching contacts", `No ${onlyFavorites ? "favorites" : "contacts"} match “${query}”. Try another search or clear the search.`);
+        else if (onlyFavorites) showState("No favorites yet", "Mark a contact with the star button to find it here. Your other contacts are available in All Contacts.");
         else showState("Your connections start here", "No contacts yet. Saved contacts will appear here when they’re available.");
       } else {
         const cards = document.createDocumentFragment();
@@ -133,7 +147,7 @@
     clearTimeout(searchTimer);
     searchTimer = null;
     count.textContent = "—";
-    countLabel.textContent = query ? "Matching contacts" : "Total contacts";
+    countLabel.textContent = favoritesOnly ? (query ? "Matching favorites" : "Favorite contacts") : (query ? "Matching contacts" : "Total contacts");
     searchResults.textContent = "Waiting for search…";
     region.setAttribute("aria-busy", "true");
     region.setAttribute("aria-label", "Contact directory");
@@ -159,10 +173,59 @@
     }
   });
 
+  function switchView(onlyFavorites) {
+    if (favoritesOnly === onlyFavorites) return;
+    favoritesOnly = onlyFavorites;
+    allNavigation.setAttribute("aria-pressed", String(!onlyFavorites));
+    favoritesNavigation.setAttribute("aria-pressed", String(onlyFavorites));
+    document.getElementById("page-title").textContent = onlyFavorites ? "Favorites" : "All Contacts";
+    document.getElementById("breadcrumb-title").textContent = onlyFavorites ? "Favorites" : "All Contacts";
+    loadContacts(); // Also cancels any pending search timer, retaining its latest query.
+  }
+  allNavigation.addEventListener("click", () => switchView(false));
+  favoritesNavigation.addEventListener("click", () => switchView(true));
+
+  async function toggleFavorite(contact, button, editButton, deleteButton) {
+    if (pendingFavorites.has(contact.id)) return;
+    pendingFavorites.add(contact.id);
+    button.disabled = editButton.disabled = deleteButton.disabled = true;
+    let failed = false;
+    try {
+      const saved = await window.ContactHubAPI.setFavorite(contact.id, !contact.favorite);
+      // No optimistic star change: only show a state confirmed by Flask.
+      contact.favorite = saved.favorite;
+      button.textContent = saved.favorite ? "★" : "☆";
+      button.setAttribute("aria-pressed", String(saved.favorite));
+    } catch (error) {
+      failed = true;
+      notice.textContent = error.missing ? error.message
+        : "We couldn’t confirm the favorite update. Reload your contacts before retrying; the change may already have been saved.";
+      notice.hidden = false;
+      return;
+    } finally {
+      pendingFavorites.delete(contact.id);
+      button.disabled = editButton.disabled = deleteButton.disabled = false;
+      // Navigation can replace a card while its PATCH is pending.
+      const currentButton = favoriteButtons.get(contact.id);
+      if (currentButton) currentButton.disabled = false;
+      for (const action of contactActions.get(contact.id) || []) action.disabled = false;
+      if (failed) (currentButton || (favoritesOnly ? favoritesNavigation : allNavigation)).focus();
+    }
+    notice.textContent = "Favorite updated. Refreshing your contacts…";
+    notice.hidden = false;
+    const refreshed = await loadContacts();
+    notice.textContent = refreshed ? "Favorite updated successfully. Your contacts are up to date."
+      : "Favorite updated successfully, but the list couldn’t refresh. Use Try again to reload your contacts.";
+    ((refreshed && favoriteButtons.get(contact.id)) || (favoritesOnly ? favoritesNavigation : allNavigation)).focus();
+  }
+
   retry.addEventListener("click", async () => {
     const refreshed = await loadContacts();
     if (refreshed && notice.textContent.startsWith("Contact deleted successfully, but")) {
       notice.textContent = "Contact deleted successfully. Your connections are up to date.";
+    }
+    if (refreshed && notice.textContent.startsWith("Favorite updated successfully, but")) {
+      notice.textContent = "Favorite updated successfully. Your contacts are up to date.";
     }
   });
 

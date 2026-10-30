@@ -16,15 +16,16 @@
     <a class="brand" href="/" aria-label="ContactHub home"><span class="brand-mark" aria-hidden="true">C</span>ContactHub<span class="brand-dot">.</span></a>
     <div class="workspace-label">YOUR WORKSPACE</div>
     <nav aria-label="Main navigation">
-      <a class="nav-link" href="#main" aria-current="page"><span aria-hidden="true">▦</span> All Contacts</a>
+      <button id="nav-all" class="nav-link" type="button" aria-pressed="true"><span aria-hidden="true">▦</span> All Contacts</button>
+      <button id="nav-favorites" class="nav-link" type="button" aria-pressed="false"><span aria-hidden="true">☆</span> Favorites</button>
     </nav>
     <div class="sidebar-note"><span class="note-icon" aria-hidden="true">↗</span><strong>People, not spreadsheets.</strong><p>A little more organized.<br>A little more connected.</p></div>
     <p class="sidebar-footer">Your contacts, organized simply.</p>
   </aside>
   <div class="workspace">
-    <header class="topbar"><span>Workspace <span class="breadcrumb-divider" aria-hidden="true">/</span> <strong>All Contacts</strong></span><button id="add-contact" class="add-button" type="button">+ Add Contact</button></header>
+    <header class="topbar"><span>Workspace <span class="breadcrumb-divider" aria-hidden="true">/</span> <strong id="breadcrumb-title">All Contacts</strong></span><button id="add-contact" class="add-button" type="button">+ Add Contact</button></header>
     <main id="main" tabindex="-1">
-      <div class="page-heading"><div><p class="eyebrow">YOUR PEOPLE, IN ONE PLACE</p><h1>All Contacts</h1><p class="intro">Good connections deserve a little organization.</p></div><div class="total-summary"><span class="total-icon" aria-hidden="true">▦</span><div><strong id="contact-count">—</strong><span id="count-label">Total contacts</span></div></div></div>
+      <div class="page-heading"><div><p class="eyebrow">YOUR PEOPLE, IN ONE PLACE</p><h1 id="page-title">All Contacts</h1><p class="intro">Good connections deserve a little organization.</p></div><div class="total-summary"><span class="total-icon" aria-hidden="true">▦</span><div><strong id="contact-count">—</strong><span id="count-label">Total contacts</span></div></div></div>
       <form id="search-form" class="search-toolbar" role="search">
         <label for="contact-search">Search contacts</label>
         <div class="search-controls"><input id="contact-search" name="search" type="search" placeholder="Search contacts..." autocomplete="off" aria-describedby="search-results"><button id="clear-search" class="secondary-button" type="button" hidden>Clear search</button></div>

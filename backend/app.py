@@ -80,9 +80,29 @@ def create_app(test_config=None):
 
     @app.get("/api/contacts")
     def contacts_list():
+        if len(request.args.getlist("favorite")) > 1 or len(request.args.getlist("search")) > 1:
+            return error_response("validation_error", "Search and favorite parameters must appear only once.", 400)
+        favorite = request.args.get("favorite", "false")
+        if favorite not in ("true", "false"):
+            return error_response("validation_error", "favorite must be true or false.", 400)
         query = request.args.get("search", "").strip()
-        contacts = models.list_contacts(query) if query else models.list_contacts()
+        contacts = models.list_contacts(query, favorite == "true") if query or favorite == "true" else models.list_contacts()
         return jsonify(contacts=[contact.to_dict() for contact in contacts])
+
+    @app.patch("/api/contacts/<int:contact_id>/favorite")
+    def contacts_favorite(contact_id):
+        if not request.is_json:
+            return error_response("unsupported_media_type", "Use Content-Type: application/json.", 415)
+        try:
+            data = request.get_json()
+        except BadRequest:
+            return error_response("invalid_json", "The request contains malformed JSON.", 400)
+        if not isinstance(data, dict) or set(data) != {"favorite"} or not isinstance(data["favorite"], bool):
+            return error_response("validation_error", "Provide only favorite as a JSON boolean.", 400)
+        contact = models.set_favorite(contact_id, data["favorite"])
+        if contact is None:
+            return error_response("not_found", "Contact not found.", 404)
+        return jsonify(contact=contact.to_dict())
 
     @app.get("/api/contacts/<int:contact_id>")
     def contacts_get(contact_id):

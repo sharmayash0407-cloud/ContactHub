@@ -8,7 +8,7 @@ ContactHub is a learning project that will help organize personal and profession
 
 ## Current status
 
-Implemented: a responsive contact dashboard with Add, Edit, and confirmed Delete Contact actions backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and noninteractive favorite indicators. Loading, empty, error, and populated states are supported, including a working retry action. The shared accessible dialog creates and edits contacts through Flask, then refreshes the list and count. Delete buttons open a separate named confirmation dialog. Backend-powered search covers name, phone, email, and company. Favorite filtering and authentication are not implemented.
+Implemented: a responsive contact dashboard with Add, Edit, and confirmed Delete Contact actions backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and accessible favorite toggle buttons. Loading, empty, error, and populated states are supported, including a working retry action. The shared accessible dialog creates and edits contacts through Flask, then refreshes the list and count. Delete buttons open a separate named confirmation dialog. Backend-powered search covers name, phone, email, and company. Favorite filtering works alongside search; authentication is not implemented.
 
 ## Planned technology stack
 
@@ -46,15 +46,16 @@ Open http://127.0.0.1:5000 in your browser. Stop the server with **Ctrl+C**. Fla
 
 ## Structure and important code
 
-- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the shared Add/Edit Contact dialog and separate deletion confirmation.
+- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the All Contacts/Favorites navigation, shared Add/Edit Contact dialog, and separate deletion confirmation.
 - `frontend/css/style.css`: layout, colors, and responsive styling.
-- `frontend/js/api.js`: same-origin GET/POST requests to `/api/contacts` and PUT/DELETE requests to `/api/contacts/<id>`, JSON response validation, and a 15-second timeout.
+- `frontend/js/api.js`: same-origin GET/POST requests to `/api/contacts` PUT/DELETE requests to `/api/contacts/<id>`, and PATCH favorite updates, JSON response validation, and a 15-second timeout.
 - `frontend/js/app.js`: alphabetical sorting, safe DOM rendering with `textContent`, initials, loading/empty/error/populated states, shared create/edit form validation/submission, and confirmed deletion. No contact values are inserted as HTML.
 - `backend/app.py`: `Path(__file__)` locates the frontend independently of the terminal's working folder. `Flask(...)` creates the application and maps frontend assets to `/static`. `@app.route("/")` connects the home URL to `index()`, which sends the HTML file. The `__main__` guard starts the server only when this file is run directly.
 - `backend/database.py`: opens request-scoped SQLite connections, creates the contacts table, and closes connections after requests. The database is created automatically at `backend/contacts.db` when the app starts; existing data is preserved.
 - `backend/models.py`: the `Contact` dataclass represents one record. SQL operations use `?` placeholders to keep user values separate from SQL code. Transactions commit successful changes and roll back failed ones.
 - `backend/requirements.txt`: reproducible dependency versions.
 - `tests/test_contacts.py`: CRUD, validation, persistence, error handling, and frontend regression tests using isolated temporary databases.
+- `tests/test_favorites.py`: strict favorite validation, persistence, combined filtering, and CRUD integration checks.
 - `tests/test_search.py`: isolated SQLite search coverage, including literal wildcards and SQL injection regressions.
 - `tests/test_dashboard.py`: dashboard/form-serving, field-limit consistency, and API/SQLite integration checks.
 - `tests/frontend.test.cjs`: JavaScript request validation, DOM-state, form, and submission tests using Node’s built-in test runner, with no npm dependencies.
@@ -109,12 +110,28 @@ Every query change invalidates older results immediately, including during the d
 
 The summary switches from **Total contacts** to **Matching contacts** while searching, and an accessible result message reports the count. No matching contacts is distinct from the unfiltered empty-database state. Errors preserve the query and offer Try again. Search values and contact data use `textContent`, never HTML insertion. Queries are not saved in localStorage or in the page URL; reloading the page resets search. Search text is transmitted in the API URL and may appear in local development request logs.
 
+## Favorites
+
+Every contact card has a keyboard-accessible star button labeled with its contact name. `aria-pressed="true"` means it is a favorite; a filled gold star also distinguishes the saved state. Click or use Space/Enter to mark or unmark it. The button sends **PATCH `/api/contacts/<id>/favorite`** with exactly `{"favorite": true}` or `{"favorite": false}`. HTTP 200 returns `{"contact": {...}}`. This endpoint updates only favorite status and the updated timestamp, preserving other fields and the created timestamp.
+
+Favorite must be a JSON boolean: strings, numbers, nulls, missing or extra fields are rejected with JSON 400 errors. Malformed JSON returns 400, unsupported content types 415, and missing contacts 404. No new database table or dependency is required.
+
+**Favorites** navigation loads **GET `/api/contacts?favorite=true`**. Search combines with it as **GET `/api/contacts?search=QUERY&favorite=true`**. The SQL groups the four search fields together and ANDs them with the favorite condition; all user values remain parameterized. `favorite=false` or an omitted parameter means the full list, not a non-favorites-only list. The query parameter accepts only lowercase `true`/`false`; blank, unknown values, or duplicate favorite/search parameters return JSON 400 errors. Other existing query parameters remain ignored for compatibility.
+
+The entered search is retained when switching views, clearing search keeps the active view, and retries and CRUD refreshes retain both filters. Counts describe the displayed results. Empty Favorites and no matching favorites have distinct messages. Add/Edit checkboxes and Delete continue to work in both views.
+
+The star changes only after Flask confirms it. While a request is pending, duplicate toggles and the same card’s Edit/Delete actions are disabled. Newer list requests take precedence over older responses. Refreshing the cards after confirmation shows current persisted values; unfavoriting in Favorites removes that card. Focus returns to its replacement star button, or the active navigation button when the card is gone. A failed request preserves the last confirmed star state and warns that an interrupted response may leave the result uncertain. Missing contacts get a clear message. A confirmed favorite change followed by failed refresh is reported separately; list retry does not repeat PATCH.
+
+View/search choices reset on page reload. Favorites themselves persist in SQLite. No cross-tab synchronization or concurrent-edit conflict resolution is implemented.
+
 ## Contact API
 
 | Method | Path | Successful response |
 |---|---|---|
 | GET | `/api/contacts` | 200: `{"contacts": [...]}` in ID order |
 | GET | `/api/contacts?search=QUERY` | 200: `{"contacts": [...]}` filtered by literal partial match |
+| GET | `/api/contacts?favorite=true` | 200: `{"contacts": [...]}` containing only favorites; combines with search |
+| PATCH | `/api/contacts/<id>/favorite` | 200: `{"contact": {...}}` after setting a strict boolean |
 | GET | `/api/contacts/<id>` | 200: `{"contact": {...}}` |
 | POST | `/api/contacts` | 201: `{"contact": {...}}`, plus a Location header |
 | PUT | `/api/contacts/<id>` | 200: `{"contact": {...}}` |
@@ -166,7 +183,7 @@ node --test tests/frontend.test.cjs
 
 The JavaScript tests use synthetic data and a small DOM stand-in; they do not replace actual browser layout checks. The dashboard has been inspected at desktop and mobile widths. To check it yourself, run Flask, open the home page, and confirm the count/cards match `GET /api/contacts`. With an empty database, expect an empty-state message and a zero count. Browser network throttling can reveal loading; stopping Flask and clicking Try again after a failed request verifies recovery. There are no hardcoded demo contacts in the frontend.
 
-Optional phone/email/company fields use clear fallback text. Favorite stars are indicators, not controls. Contact data is shown as plain text; notes are editable in the dialog but not displayed on cards; timestamps are not displayed. The dashboard loads on each page visit, debounced search, retry, and confirmed contact creation/update/deletion, without automatic polling or pagination.
+Optional phone/email/company fields use clear fallback text. Favorite stars are buttons with `aria-pressed`, reflecting the last confirmed saved value. Contact data is shown as plain text; notes are editable in the dialog but not displayed on cards; timestamps are not displayed. The dashboard loads on each page visit, debounced search, retry, and confirmed contact creation/update/deletion, without automatic polling or pagination.
 
 ## HTTP verification
 
@@ -205,4 +222,4 @@ Only push new milestones to GitHub after review and explicit permission.
 
 ## Planned future features
 
-Next, add favorites-only filtering with an explicit API query option and focused tests. It is not implemented yet; search is complete.
+CRUD, search, and favorites are implemented. Next, review accessibility and full browser workflows, then address only verified issues before considering additional features.

@@ -2,6 +2,30 @@
 
 // This file owns network requests; app.js owns what appears on the page.
 window.ContactHubAPI = {
+  async setFavorite(id, favorite) {
+    if (!Number.isSafeInteger(id) || id <= 0 || typeof favorite !== "boolean") throw new Error("Invalid favorite request.");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`/api/contacts/${id}/favorite`, {
+        method: "PATCH",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ favorite }),
+        signal: controller.signal,
+      });
+      if (response.status === 404) {
+        const error = new Error("This contact no longer exists. Reload your contacts.");
+        error.missing = true;
+        throw error;
+      }
+      if (!response.ok || response.status !== 200 || !(response.headers.get("content-type") || "").includes("application/json")) {
+        throw new Error("Unconfirmed favorite update.");
+      }
+      const data = await response.json();
+      if (!data?.contact || data.contact.id !== id || data.contact.favorite !== favorite) throw new Error("Unconfirmed favorite update.");
+      return data.contact;
+    } finally { clearTimeout(timeout); }
+  },
   async deleteContact(id) {
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error("Invalid contact ID.");
     const controller = new AbortController();
@@ -94,12 +118,15 @@ window.ContactHubAPI = {
       clearTimeout(timeout);
     }
   },
-  async getContacts(search = "") {
+  async getContacts(search = "", favoritesOnly = false) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const query = search.trim();
-      const url = query ? `/api/contacts?search=${encodeURIComponent(query)}` : "/api/contacts";
+      const parameters = [];
+      if (query) parameters.push(`search=${encodeURIComponent(query)}`);
+      if (favoritesOnly) parameters.push("favorite=true");
+      const url = "/api/contacts" + (parameters.length ? `?${parameters.join("&")}` : "");
       const response = await fetch(url, {
         headers: { Accept: "application/json" },
         signal: controller.signal,
