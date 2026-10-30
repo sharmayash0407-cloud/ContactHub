@@ -8,7 +8,7 @@ ContactHub is a learning project that will help organize personal and profession
 
 ## Current status
 
-Implemented: a responsive contact dashboard with an Add Contact form backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and noninteractive favorite indicators. Loading, empty, error, and populated states are supported, including a working retry action. The accessible Add Contact dialog saves through Flask, then refreshes the list and count. Editing/deletion controls, search, favorite toggles/filtering, and authentication are not implemented.
+Implemented: a responsive contact dashboard with Add and Edit Contact forms backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and noninteractive favorite indicators. Loading, empty, error, and populated states are supported, including a working retry action. The shared accessible dialog creates and edits contacts through Flask, then refreshes the list and count. Deletion controls, search, favorite filtering, and authentication are not implemented.
 
 ## Planned technology stack
 
@@ -46,10 +46,10 @@ Open http://127.0.0.1:5000 in your browser. Stop the server with **Ctrl+C**. Fla
 
 ## Structure and important code
 
-- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the labeled Add Contact dialog.
+- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the shared Add/Edit Contact dialog.
 - `frontend/css/style.css`: layout, colors, and responsive styling.
-- `frontend/js/api.js`: same-origin GET and POST requests to `/api/contacts`, JSON response validation, and a 15-second timeout.
-- `frontend/js/app.js`: alphabetical sorting, safe DOM rendering with `textContent`, initials, loading/empty/error/populated states, and form validation/submission. No contact values are inserted as HTML.
+- `frontend/js/api.js`: same-origin GET/POST requests to `/api/contacts` and PUT requests to `/api/contacts/<id>`, JSON response validation, and a 15-second timeout.
+- `frontend/js/app.js`: alphabetical sorting, safe DOM rendering with `textContent`, initials, loading/empty/error/populated states, and shared create/edit form validation/submission. No contact values are inserted as HTML.
 - `backend/app.py`: `Path(__file__)` locates the frontend independently of the terminal's working folder. `Flask(...)` creates the application and maps frontend assets to `/static`. `@app.route("/")` connects the home URL to `index()`, which sends the HTML file. The `__main__` guard starts the server only when this file is run directly.
 - `backend/database.py`: opens request-scoped SQLite connections, creates the contacts table, and closes connections after requests. The database is created automatically at `backend/contacts.db` when the app starts; existing data is preserved.
 - `backend/models.py`: the `Contact` dataclass represents one record. SQL operations use `?` placeholders to keep user values separate from SQL code. Transactions commit successful changes and roll back failed ones.
@@ -69,6 +69,18 @@ The form trims text and uses the existing backend length limits. Email uses the 
 The native dialog keeps the background inactive and supports keyboard navigation. Focus starts on Full Name and returns to Add Contact when closed. Cancel or Escape prompts an inline unsaved-change confirmation; Keep editing preserves input, and Discard changes resets the form. Saving disables inputs and action buttons, prevents repeated submissions, and blocks closing until the request finishes. The backdrop does not discard data.
 
 Server-validation errors keep the form open. Network failures/timeouts can leave the result uncertain: the server may have saved before the response was lost, so check the list before retrying. If saving succeeds but refreshing fails, the notice explicitly says the contact was saved and offers the existing list retry. No contact data is written to localStorage. Unsaved form input is not preserved across a page reload or closing the browser tab. Duplicate contacts are allowed by the backend; this milestone prevents concurrent submissions from this form, not duplicates across tabs or later retries.
+
+## Editing a contact
+
+Click the **Edit** button on a card. The existing dialog switches to Edit Contact and prefills name, phone, email, company, notes, and favorite status from that record. Its database ID is held in JavaScript separately from form input so the update targets only that contact.
+
+Save Changes validates all six editable fields with the same rules as Add Contact, then sends a full JSON record using **PUT `/api/contacts/<id>`**. POST creates a new record (201 Created); PUT updates the selected record (200 OK). Flask performs authoritative validation and SQLite updates the matching ID through parameterized SQL. The ID and created timestamp remain unchanged; the updated timestamp changes.
+
+Only a confirmed successful response closes the form and announces an update. A fresh GET reloads the cards so names are sorted again, the count stays correct, and favorite indicators reflect saved values. Focus returns to that contact’s replacement Edit button, or Add Contact if the list fails to refresh. A successful update followed by a failed GET is reported as **updated, but unable to refresh**, with the list retry available.
+
+Cancelling an unchanged edit closes immediately. Changes are compared with the original fields, including the favorite checkbox; Cancel/Escape asks before discarding. Failed validation or requests preserve edited values. A 404 explains that the record no longer exists. Network/server/malformed-response failures cannot confirm the update, so review the list before retrying. Raw server details are never shown. Simultaneous saves are blocked while the request is pending.
+
+The form uses the dashboard’s latest loaded data; it does not detect another browser tab changing the same record. There is no concurrent-edit conflict detection in this milestone.
 
 ## Contact API
 
@@ -126,7 +138,7 @@ node --test tests/frontend.test.cjs
 
 The JavaScript tests use synthetic data and a small DOM stand-in; they do not replace actual browser layout checks. The dashboard has been inspected at desktop and mobile widths. To check it yourself, run Flask, open the home page, and confirm the count/cards match `GET /api/contacts`. With an empty database, expect an empty-state message and a zero count. Browser network throttling can reveal loading; stopping Flask and clicking Try again after a failed request verifies recovery. There are no hardcoded demo contacts in the frontend.
 
-Optional phone/email/company fields use clear fallback text. Favorite stars are indicators, not controls. Contact data is shown as plain text; notes and timestamps are not displayed in this milestone. The dashboard loads on each page visit, retry, and confirmed contact creation, without automatic polling or pagination.
+Optional phone/email/company fields use clear fallback text. Favorite stars are indicators, not controls. Contact data is shown as plain text; notes are editable in the dialog but not displayed on cards; timestamps are not displayed. The dashboard loads on each page visit, retry, and confirmed contact creation/update, without automatic polling or pagination.
 
 ## HTTP verification
 
@@ -165,4 +177,4 @@ Only push new milestones to GitHub after review and explicit permission.
 
 ## Planned future features
 
-Next, add an Edit Contact form that reuses the existing validation and PUT endpoint. Deleting, search, and favorite toggles/filtering remain future milestones.
+Next, add Delete Contact with an explicit confirmation, using the existing DELETE endpoint. Search and favorites-only filtering remain future milestones.

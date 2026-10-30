@@ -60,3 +60,22 @@ def test_creation_form_matches_backend_limits_and_persists_fields(tmp_path):
         assert saved[key] == value
     # A new app instance reads the same record from SQLite.
     assert create_app(config).test_client().get("/api/contacts").json == {"contacts": [saved]}
+
+
+def test_edit_persists_only_selected_contact_and_preserves_count(tmp_path):
+    config = {"TESTING": True, "DATABASE": str(tmp_path / "editing.db")}
+    client = create_app(config).test_client()
+    first = client.post("/api/contacts", json={"name": "Zeta Synthetic", "notes": "Existing notes"}).json["contact"]
+    other = client.post("/api/contacts", json={"name": "Beta Synthetic", "notes": "Leave unchanged"}).json["contact"]
+    changed = dict(name="Alpha Synthetic", phone="+49 (0) 0000 ext 12", email="edit@example.invalid",
+                   company="Example Lab", notes="Edited synthetic notes", favorite=True)
+    result = client.put(f'/api/contacts/{first["id"]}', json=changed)
+    assert result.status_code == 200
+    edited = result.json["contact"]
+    assert edited["id"] == first["id"]
+    assert edited["created_at"] == first["created_at"]
+    assert edited["updated_at"] != first["updated_at"]
+    for key, value in changed.items():
+        assert edited[key] == value
+    records = create_app(config).test_client().get("/api/contacts").json["contacts"]
+    assert records == [edited, other]

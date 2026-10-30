@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const apiSource = readFileSync('frontend/js/api.js', 'utf8');
 const appSource = readFileSync('frontend/js/app.js', 'utf8');
 const contact = (changes = {}) => ({ id: 1, name: 'Synthetic Example', phone: '',
-  email: 'synthetic@example.invalid', company: '', favorite: false, ...changes });
+  email: 'synthetic@example.invalid', company: '', notes: '', favorite: false, ...changes });
 
 function apiContext(fetch) {
   const context = { window: {}, fetch, AbortController, setTimeout, clearTimeout };
@@ -36,6 +36,7 @@ for (const [label, reply] of [
   ['null body', response(null)],
   ['invalid favorite', response({ contacts: [contact({ favorite: 1 })] })],
   ['invalid name', response({ contacts: [contact({ name: null })] })],
+  ['missing notes', response({ contacts: [contact({ notes: undefined })] })],
   ['invalid JSON', response({}, { json: async () => { throw new SyntaxError(); } })],
 ]) {
   test(`API rejects ${label}`, async () => {
@@ -97,7 +98,7 @@ class Element {
   addEventListener(name, callback) { this.listeners[name] = callback; }
   set innerHTML(value) { throw new Error('Unsafe HTML insertion'); }
 }
-function render(fetchContacts, createContact = async () => contact()) {
+function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id })) {
   const elements = {};
   const document = {
     getElementById(id) { return elements[id] ||= new Element('div'); },
@@ -108,7 +109,7 @@ function render(fetchContacts, createContact = async () => contact()) {
     for (const node of Object.values(elements)) { node.value = ''; node.checked = false; }
   };
   vm.runInNewContext(appSource, { document, window: {
-    ContactHubAPI: { getContacts: fetchContacts, createContact } } });
+    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact } } });
   return elements;
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -337,3 +338,191 @@ for (const [label, reply] of [
       (error) => !error.message.includes('raw private details'));
   });
 }
+// Edit uses the same form and validation; locate buttons from the rendered cards.
+const editButton = (elements, index = 0) => {
+  const card = elements['contact-list'].children[index].children[0];
+  return card.children[card.children.length - 1];
+};
+
+test('Edit prepopulates every field and unchanged Cancel restores the triggering button without confirmation', async () => {
+  const existing = contact({ notes: 'Synthetic notes', phone: '+44 0000', company: 'Example', favorite: true });
+  const elements = render(async () => [existing]);
+  await settle();
+  const button = editButton(elements);
+  assert.equal(button.attributes['aria-label'], 'Edit Synthetic Example');
+  button.listeners.click();
+  assert.equal(elements['form-title'].textContent, 'Edit Contact');
+  assert.equal(elements['save-contact'].textContent, 'Save Changes');
+  for (const field of ['name', 'phone', 'email', 'company', 'notes']) {
+    assert.equal(elements[`contact-${field}`].value, existing[field]);
+  }
+  assert.equal(elements['contact-favorite'].checked, true);
+  elements['cancel-contact'].listeners.click();
+  assert.equal(elements['contact-dialog'].open, false);
+  assert.equal(elements['discard-confirmation'].hidden, true);
+  assert.equal(button.focused, true);
+});
+
+test('valid Edit sends only selected ID and full data, reorders cards and preserves other contacts/count', async () => {
+  const untouched = contact({ id: 2, name: 'Beta Example', notes: 'Unchanged' });
+  let records = [contact({ name: 'Zeta Example', notes: 'Existing notes', favorite: true }), untouched];
+  let sent;
+  const elements = render(async () => records.slice(), undefined, async (id, data) => {
+    sent = { id, data };
+    records = records.map((record) => record.id === id ? { ...record, ...data } : record);
+    return records.find((record) => record.id === id);
+  });
+  await settle();
+  editButton(elements, 1).listeners.click();
+  elements['contact-name'].value = '  Alpha Updated  ';
+  elements['contact-phone'].value = '+49 (0) 0000 ext 12';
+  elements['contact-email'].value = '';
+  elements['contact-company'].value = ' New Example Lab ';
+  elements['contact-notes'].value = '';
+  elements['contact-favorite'].checked = false;
+  await submit(elements);
+  assert.equal(sent.id, 1);
+  assert.equal(sent.data.name, 'Alpha Updated');
+  assert.equal(sent.data.notes, '');
+  assert.equal(sent.data.email, '');
+  assert.equal(sent.data.company, 'New Example Lab');
+  assert.equal(sent.data.favorite, false);
+  assert.deepEqual(records[1], untouched);
+  assert.equal(elements['contact-count'].textContent, '2');
+  const firstCard = elements['contact-list'].children[0].children[0];
+  assert.equal(firstCard.children[1].textContent, 'Alpha Updated');
+  assert.equal(firstCard.children[0].children.length, 1);
+  assert.match(elements['save-notice'].textContent, /updated successfully/);
+  assert.equal(elements['contact-dialog'].open, false);
+  assert.equal(editButton(elements).focused, true);
+});
+
+for (const [field, value] of [['name', '  '], ['email', 'bad-address']]) {
+  test(`Edit rejects invalid ${field} without PUT and preserves input`, async () => {
+    let writes = 0;
+    const elements = render(async () => [contact()], undefined, async () => { writes++; });
+    await settle();
+    editButton(elements).listeners.click();
+    elements[`contact-${field}`].value = value;
+    await submit(elements);
+    assert.equal(writes, 0);
+    assert.equal(elements[`error-${field}`].hidden, false);
+    assert.equal(elements[`contact-${field}`].value, value);
+  });
+}
+
+test('Edit dirty checks compare against the original, including favorite; Add subsequently starts blank', async () => {
+  const elements = render(async () => [contact({ favorite: true })]);
+  await settle();
+  editButton(elements).listeners.click();
+  elements['contact-favorite'].checked = false;
+  elements['cancel-contact'].listeners.click();
+  assert.equal(elements['discard-confirmation'].hidden, false);
+  elements['keep-editing'].listeners.click();
+  elements['contact-favorite'].checked = true;
+  elements['cancel-contact'].listeners.click();
+  assert.equal(elements['contact-dialog'].open, false);
+  openForm(elements);
+  assert.equal(elements['form-title'].textContent, 'Add a contact');
+  assert.equal(elements['contact-name'].value, '');
+  assert.equal(elements['contact-favorite'].checked, false);
+});
+
+for (const failure of ['missing', 'validation', 'network', 'server']) {
+  test(`Edit ${failure} failure preserves input and never claims success`, async () => {
+    const elements = render(async () => [contact()], undefined, async () => {
+      const error = new Error(failure === 'missing' ? 'This contact no longer exists.' : 'Review these details.');
+      if (failure === 'missing') error.missing = true;
+      if (failure === 'validation') error.validation = true;
+      throw error;
+    });
+    await settle();
+    editButton(elements).listeners.click();
+    elements['contact-name'].value = 'Edited Synthetic Example';
+    await submit(elements);
+    assert.equal(elements['contact-dialog'].open, true);
+    assert.equal(elements['contact-name'].value, 'Edited Synthetic Example');
+    assert.equal(elements['form-error'].hidden, false);
+    assert.equal(elements['save-contact'].disabled, false);
+    assert.equal(elements['save-notice'].textContent, '');
+    if (failure === 'missing') assert.match(elements['form-error'].textContent, /no longer exists/);
+    if (failure === 'network' || failure === 'server') assert.match(elements['form-error'].textContent, /couldn’t confirm the update/);
+  });
+}
+
+test('Edit prevents concurrent PUT requests and blocks closing while saving', async () => {
+  let finish;
+  let writes = 0;
+  const elements = render(async () => [contact()], undefined, () => {
+    writes++;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  await settle();
+  editButton(elements).listeners.click();
+  const pending = submit(elements);
+  await submit(elements);
+  elements['cancel-contact'].listeners.click();
+  assert.equal(writes, 1);
+  assert.equal(elements['contact-dialog'].open, true);
+  assert.equal(elements['save-contact'].disabled, true);
+  finish(contact());
+  await pending;
+});
+
+test('Edit reports confirmed update separately when the list refresh fails', async () => {
+  let reads = 0;
+  const elements = render(async () => {
+    if (++reads > 1) throw new Error('offline');
+    return [contact()];
+  });
+  await settle();
+  editButton(elements).listeners.click();
+  await submit(elements);
+  assert.match(elements['save-notice'].textContent, /updated successfully, but the list couldn’t refresh/);
+  assert.equal(elements['retry-button'].hidden, false);
+  assert.equal(elements['contact-dialog'].open, false);
+  assert.equal(elements['add-contact'].focused, true);
+});
+
+test('PUT sends the full JSON record to the selected ID and accepts 200', async () => {
+  const { id, ...data } = contact({ id: 42 });
+  const api = apiContext(async (url, options) => {
+    assert.equal(url, '/api/contacts/42');
+    assert.equal(options.method, 'PUT');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(options.body), data);
+    return response({ contact: { ...data, id } }, { status: 200 });
+  });
+  assert.equal((await api.updateContact(42, data)).id, 42);
+});
+
+for (const id of [null, undefined, 0, -1, '1']) {
+  test(`PUT rejects invalid ID ${String(id)} before fetching`, async () => {
+    let calls = 0;
+    const api = apiContext(async () => { calls++; });
+    await assert.rejects(api.updateContact(id, contact()), (error) => error.missing === true);
+    assert.equal(calls, 0);
+  });
+}
+for (const [label, reply] of [
+  ['missing contact', response({}, { status: 404, ok: false })],
+  ['validation', response({ error: { code: 'validation_error', message: 'private data' } }, { status: 400, ok: false })],
+  ['server failure', response({}, { status: 500, ok: false })],
+  ['HTML', response({}, { status: 200, headers: { get: () => 'text/html' } })],
+  ['malformed JSON', response({}, { status: 200, json: async () => { throw new SyntaxError(); } })],
+  ['missing envelope', response({}, { status: 200 })],
+  ['wrong contact ID', response({ contact: contact({ id: 2 }) }, { status: 200 })],
+  ['missing notes', response({ contact: contact({ notes: null }) }, { status: 200 })],
+]) {
+  test(`PUT handles ${label} without leaking server details`, async () => {
+    await assert.rejects(apiContext(async () => reply).updateContact(1, contact()), (error) => {
+      assert.ok(!error.message.includes('private data'));
+      if (label === 'missing contact') assert.equal(error.missing, true);
+      if (label === 'validation') assert.equal(error.validation, true);
+      return true;
+    });
+  });
+}
+test('PUT propagates network failure', async () => {
+  await assert.rejects(apiContext(async () => { throw new TypeError('offline'); }).updateContact(1, contact()));
+});

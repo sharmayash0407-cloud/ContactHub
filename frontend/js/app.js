@@ -9,6 +9,7 @@
   const count = document.getElementById("contact-count");
   const retry = document.getElementById("retry-button");
   let loadVersion = 0;
+  const editButtons = new Map();
 
   // User values are always text, never HTML markup.
   function element(tag, className, text) {
@@ -43,6 +44,12 @@
       details.append(row);
     }
     card.append(details);
+    const editButton = element("button", "edit-button", "Edit");
+    editButton.type = "button";
+    editButton.setAttribute("aria-label", `Edit ${contact.name}`);
+    editButton.addEventListener("click", () => openForm(contact, editButton));
+    editButtons.set(contact.id, editButton);
+    card.append(editButton);
     item.append(card);
     return item;
   }
@@ -65,6 +72,7 @@
     try {
       const contacts = await window.ContactHubAPI.getContacts();
       if (version !== loadVersion) return false;
+      editButtons.clear();
       contacts.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id);
       count.textContent = String(contacts.length);
       if (contacts.length === 0) {
@@ -105,10 +113,18 @@
   const limits = { name: 200, phone: 50, email: 254, company: 200, notes: 5000 };
   const fields = Object.fromEntries(Object.keys(limits).map((key) => [key, document.getElementById(`contact-${key}`)]));
   const favorite = document.getElementById("contact-favorite");
+  const formTitle = document.getElementById("form-title");
   let saving = false;
+  let editingId = null;
+  let returnFocus = addButton;
+  let originalValues = "";
+
+  function valuesSnapshot() {
+    return JSON.stringify({ ...Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])), favorite: favorite.checked });
+  }
 
   function dirty() {
-    return favorite.checked || Object.values(fields).some((field) => field.value !== "");
+    return valuesSnapshot() !== originalValues;
   }
 
   function clearErrors() {
@@ -140,13 +156,21 @@
     if (!saving) dialog.close();
   });
 
-  addButton.addEventListener("click", () => {
+  function openForm(contact = null, trigger = addButton) {
+    editingId = contact ? contact.id : null;
+    returnFocus = trigger;
+    for (const [key, field] of Object.entries(fields)) field.value = contact ? contact[key] : "";
+    favorite.checked = contact ? contact.favorite : false;
+    originalValues = valuesSnapshot();
+    formTitle.textContent = contact ? "Edit Contact" : "Add a contact";
+    saveButton.textContent = contact ? "Save Changes" : "Save Contact";
     clearErrors();
     discardConfirmation.hidden = true;
     progress.textContent = "";
     dialog.showModal(); // Native dialog traps keyboard focus and makes the background inert.
     fields.name.focus();
-  });
+  }
+  addButton.addEventListener("click", () => openForm());
   cancelButton.addEventListener("click", closeForm);
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault(); // Escape follows the same unsaved-change and saving rules.
@@ -161,7 +185,8 @@
     form.reset();
     discardConfirmation.hidden = true;
     clearErrors();
-    addButton.focus();
+    editingId = null;
+    (returnFocus.isConnected === false ? addButton : returnFocus).focus();
   });
 
   form.addEventListener("submit", async (event) => {
@@ -192,17 +217,21 @@
     }
     if (firstInvalid) { firstInvalid.focus(); return; }
     data.favorite = favorite.checked;
+    const updatingId = editingId;
     saving = true;
     saveButton.disabled = true;
     cancelButton.disabled = true;
     Object.values(fields).forEach((field) => { field.disabled = true; });
     favorite.disabled = true;
-    progress.textContent = "Saving contact…";
+    progress.textContent = updatingId === null ? "Saving contact…" : "Updating contact…";
     try {
-      await window.ContactHubAPI.createContact(data);
+      if (updatingId === null) await window.ContactHubAPI.createContact(data);
+      else await window.ContactHubAPI.updateContact(updatingId, data);
     } catch (error) {
-      formError.textContent = error.validation ? error.message
-        : "We couldn’t confirm the save. Your details are still here. Check the contact list before trying again to avoid a duplicate.";
+      formError.textContent = error.validation || error.missing ? error.message
+        : updatingId === null
+          ? "We couldn’t confirm the save. Your details are still here. Check the contact list before trying again to avoid a duplicate."
+          : "We couldn’t confirm the update. Your edits are still here. Reload the list before retrying; the changes may already have been saved.";
       formError.hidden = false;
       formError.focus();
       return;
@@ -214,14 +243,19 @@
       favorite.disabled = false;
       progress.textContent = "";
     }
-    // Only a confirmed 201 response closes the form and announces success.
+    // Only a confirmed POST 201 or PUT 200 closes the form and announces success.
     form.reset();
     dialog.close();
-    notice.textContent = "Contact saved. Refreshing your connections…";
+    const action = updatingId === null ? "saved" : "updated";
+    notice.textContent = `Contact ${action}. Refreshing your connections…`;
     notice.hidden = false;
     const refreshed = await loadContacts();
-    notice.textContent = refreshed ? "Contact saved successfully. Your connections are up to date."
-      : "Contact saved successfully, but the list couldn’t refresh. Use Try again to reload your connections; don’t submit the contact again.";
+    notice.textContent = refreshed ? `Contact ${action} successfully. Your connections are up to date.`
+      : `Contact ${action} successfully, but the list couldn’t refresh. Use Try again to reload your connections; don’t submit the contact again.`;
+    if (updatingId !== null) {
+      // Refresh replaces card nodes; focus the replacement Edit button, or a safe fallback.
+      ((refreshed && editButtons.get(updatingId)) || addButton).focus();
+    }
   });
   loadContacts();
 })();
