@@ -1,5 +1,7 @@
 # ContactHub
 
+a contact type web application / browser
+
 Your contacts, organized simply.
 
 ContactHub is a learning project that will help organize personal and professional contacts.
