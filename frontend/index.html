@@ -1,29 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="ContactHub will help you organize personal and professional contacts in one place.">
-    <title>ContactHub — Your contacts, organized simply.</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="/static/js/api.js" defer></script>
-    <script src="/static/js/app.js" defer></script>
-  </head>
-  <body>
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="ContactHub home"><span class="brand-mark" aria-hidden="true">C</span>ContactHub</a>
-      <span class="milestone">A little more connected.</span>
-    </header>
-    <main>
-      <section class="welcome" aria-labelledby="welcome-heading">
-        <p class="status"><span class="status-dot" aria-hidden="true"></span> In development</p>
-        <div class="welcome-mark" aria-hidden="true">C<span>+</span></div>
-        <p class="eyebrow">WELCOME TO CONTACTHUB</p>
-        <h1 id="welcome-heading">Your contacts,<br><span>organized simply.</span></h1>
-        <p class="description">A home for the people who matter. ContactHub will help you organize your personal and professional contacts, all in one simple place.</p>
-        <div class="progress-note"><span aria-hidden="true">01</span><p><strong>Good connections start here.</strong><br>We're laying the foundations. More to come.</p></div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Your contacts, organized simply. Browse your personal and professional connections with ContactHub.">
+  <title>All Contacts — ContactHub</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/js/api.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to contacts</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="ContactHub home"><span class="brand-mark" aria-hidden="true">C</span>ContactHub<span class="brand-dot">.</span></a>
+    <div class="workspace-label">YOUR WORKSPACE</div>
+    <nav aria-label="Main navigation">
+      <a class="nav-link" href="#main" aria-current="page"><span aria-hidden="true">▦</span> All Contacts</a>
+    </nav>
+    <div class="sidebar-note"><span class="note-icon" aria-hidden="true">↗</span><strong>People, not spreadsheets.</strong><p>A little more organized.<br>A little more connected.</p></div>
+    <p class="sidebar-footer">Your contacts, organized simply.</p>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>Workspace <span class="breadcrumb-divider" aria-hidden="true">/</span> <strong>All Contacts</strong></span><span class="view-badge">Read-only view</span></header>
+    <main id="main" tabindex="-1">
+      <div class="page-heading"><div><p class="eyebrow">YOUR PEOPLE, IN ONE PLACE</p><h1>All Contacts</h1><p class="intro">Good connections deserve a little organization.</p></div><div class="total-summary"><span class="total-icon" aria-hidden="true">▦</span><div><strong id="contact-count">—</strong><span>Total contacts</span></div></div></div>
+      <div class="list-heading"><h2>Your connections</h2><span>Alphabetical · A–Z</span></div>
+      <section id="contacts-region" aria-label="Contact directory" aria-busy="true">
+        <div id="directory-state" class="directory-state" role="status" aria-live="polite"><span class="state-icon" aria-hidden="true">◎</span><h2 id="state-title">Loading your contacts…</h2><p id="state-description">Getting your connections ready.</p><button id="retry-button" type="button" hidden>Try again</button></div>
+        <ul id="contact-list" class="contact-grid" hidden></ul>
       </section>
+      <noscript><p class="noscript-note">Enable JavaScript to load contacts from ContactHub.</p></noscript>
+      <footer class="page-footer"><span>Made for meaningful connections.</span><span>ContactHub</span></footer>
     </main>
-    <footer>ContactHub <span aria-hidden="true">·</span> Built one milestone at a time.</footer>
-  </body>
+  </div>
+</body>
 </html>
