@@ -2,6 +2,34 @@
 
 // This file owns network requests; app.js owns what appears on the page.
 window.ContactHubAPI = {
+  async createContact(contact) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch("/api/contacts", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(contact),
+        signal: controller.signal,
+      });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) throw new Error("Unconfirmed save.");
+      const data = await response.json();
+      if (response.status === 400 && data?.error?.code === "validation_error") {
+        const error = new Error("The server rejected these details. Review the fields and try again.");
+        error.validation = true;
+        throw error;
+      }
+      const saved = data?.contact;
+      if (!response.ok || response.status !== 201 || !saved || !Number.isInteger(saved.id)
+          || saved.id <= 0 || typeof saved.name !== "string") {
+        throw new Error("Unconfirmed save.");
+      }
+      return saved;
+    } finally {
+      clearTimeout(timeout);
+    }
+  },
   async getContacts() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
