@@ -119,7 +119,7 @@
         list.append(cards);
         list.hidden = false;
         state.hidden = true;
-        // Keep a useful announcement in the live region after loading finishes.
+        // The separate search-results status announces the count; this names the directory.
         region.setAttribute("aria-label", `Contact directory, ${contacts.length} contacts`);
       }
       return true;
@@ -221,12 +221,14 @@
 
   retry.addEventListener("click", async () => {
     const refreshed = await loadContacts();
-    if (refreshed && notice.textContent.startsWith("Contact deleted successfully, but")) {
-      notice.textContent = "Contact deleted successfully. Your connections are up to date.";
+    const previousAction = notice.textContent.match(/^Contact (saved|updated|deleted) successfully, but/);
+    if (refreshed && previousAction) {
+      notice.textContent = `Contact ${previousAction[1]} successfully. Your connections are up to date.`;
     }
     if (refreshed && notice.textContent.startsWith("Favorite updated successfully, but")) {
       notice.textContent = "Favorite updated successfully. Your contacts are up to date.";
     }
+    if (refreshed) searchInput.focus(); // Retry disappears when results replace the error state.
   });
 
   const dialog = document.getElementById("contact-dialog");

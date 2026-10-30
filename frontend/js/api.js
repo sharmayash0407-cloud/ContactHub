@@ -1,5 +1,13 @@
 "use strict";
 
+// Every read/save response needs the fields the dashboard and shared form use.
+function isContact(contact) {
+  return contact !== null && typeof contact === "object"
+    && Number.isSafeInteger(contact.id) && contact.id > 0
+    && ["name", "phone", "email", "company", "notes"].every((field) => typeof contact[field] === "string")
+    && contact.name.trim().length > 0 && typeof contact.favorite === "boolean";
+}
+
 // This file owns network requests; app.js owns what appears on the page.
 window.ContactHubAPI = {
   async setFavorite(id, favorite) {
@@ -22,7 +30,7 @@ window.ContactHubAPI = {
         throw new Error("Unconfirmed favorite update.");
       }
       const data = await response.json();
-      if (!data?.contact || data.contact.id !== id || data.contact.favorite !== favorite) throw new Error("Unconfirmed favorite update.");
+      if (!isContact(data?.contact) || data.contact.id !== id || data.contact.favorite !== favorite) throw new Error("Unconfirmed favorite update.");
       return data.contact;
     } finally { clearTimeout(timeout); }
   },
@@ -80,9 +88,7 @@ window.ContactHubAPI = {
         throw error;
       }
       const saved = data?.contact;
-      if (!response.ok || response.status !== 200 || !saved || saved.id !== id
-          || !["name", "phone", "email", "company", "notes"].every((key) => typeof saved[key] === "string")
-          || !saved.name.trim() || typeof saved.favorite !== "boolean") {
+      if (!response.ok || response.status !== 200 || !isContact(saved) || saved.id !== id) {
         throw new Error("Unconfirmed update.");
       }
       return saved;
@@ -109,8 +115,7 @@ window.ContactHubAPI = {
         throw error;
       }
       const saved = data?.contact;
-      if (!response.ok || response.status !== 201 || !saved || !Number.isInteger(saved.id)
-          || saved.id <= 0 || typeof saved.name !== "string") {
+      if (!response.ok || response.status !== 201 || !isContact(saved)) {
         throw new Error("Unconfirmed save.");
       }
       return saved;
@@ -136,11 +141,7 @@ window.ContactHubAPI = {
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) throw new Error("Unexpected response format.");
       const data = await response.json();
-      const validContact = (contact) => contact !== null && typeof contact === "object"
-        && Number.isInteger(contact.id) && contact.id > 0
-        && ["name", "phone", "email", "company", "notes"].every((field) => typeof contact[field] === "string")
-        && contact.name.trim().length > 0 && typeof contact.favorite === "boolean";
-      if (!data || !Array.isArray(data.contacts) || !data.contacts.every(validContact)) {
+      if (!data || !Array.isArray(data.contacts) || !data.contacts.every(isContact)) {
         throw new Error("Unexpected contact data.");
       }
       return data.contacts;

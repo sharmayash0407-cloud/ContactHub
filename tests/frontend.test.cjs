@@ -1111,3 +1111,38 @@ test('confirmed favorite change followed by failed refresh preserves filter and 
   assert.deepEqual(requests.at(-1), ['', true]);
   assert.equal(elements['save-notice'].textContent, 'Favorite updated successfully. Your contacts are up to date.');
 });
+for (const operation of ['create', 'favorite']) {
+  test(`quality: ${operation} rejects an incomplete successful contact response`, async () => {
+    const api = apiContext(async () => response({ contact: { id: 1, name: 'Synthetic Example', favorite: true } }, { status: operation === 'create' ? 201 : 200 }));
+    if (operation === 'create') await assert.rejects(api.createContact({ name: 'Synthetic Example' }));
+    else await assert.rejects(api.setFavorite(1, true));
+  });
+}
+for (const operation of ['create', 'edit']) {
+  test(`quality: ${operation} refresh retry clears the obsolete failure notice`, async () => {
+    let reads = 0;
+    const elements = render(async () => {
+      if (++reads === 2) throw new Error('offline');
+      return [contact()];
+    });
+    await settle();
+    if (operation === 'create') { openForm(elements); elements['contact-name'].value = 'Synthetic New'; }
+    else editButton(elements).listeners.click();
+    await submit(elements);
+    assert.match(elements['save-notice'].textContent, /couldn’t refresh/);
+    await elements['retry-button'].listeners.click();
+    assert.match(elements['save-notice'].textContent, /up to date/);
+    assert.doesNotMatch(elements['save-notice'].textContent, /couldn’t refresh/);
+  });
+}
+
+test('quality: retry restores focus to the search input when its button disappears', async () => {
+  let reads = 0;
+  const elements = render(async () => {
+    if (++reads === 1) throw new Error('offline');
+    return [contact()];
+  });
+  await settle();
+  await elements['retry-button'].listeners.click();
+  assert.equal(elements['contact-search'].focused, true);
+});
