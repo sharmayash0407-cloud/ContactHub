@@ -50,6 +50,11 @@
     editButton.addEventListener("click", () => openForm(contact, editButton));
     editButtons.set(contact.id, editButton);
     card.append(editButton);
+    const deleteButton = element("button", "delete-button", "Delete");
+    deleteButton.type = "button";
+    deleteButton.setAttribute("aria-label", `Delete ${contact.name}`);
+    deleteButton.addEventListener("click", () => openDelete(contact, deleteButton));
+    card.append(deleteButton);
     item.append(card);
     return item;
   }
@@ -65,6 +70,7 @@
   async function loadContacts() {
     // A newer refresh wins if two GET requests finish out of order.
     const version = ++loadVersion;
+    region.setAttribute("aria-label", "Contact directory");
     region.setAttribute("aria-busy", "true");
     count.textContent = "—";
     list.replaceChildren();
@@ -90,14 +96,19 @@
     } catch {
       if (version !== loadVersion) return false;
       // Never expose raw server errors or contact values in error messages/logs.
-      showState("We couldn’t load your contacts", "Check your connection and try again. Your saved contacts haven’t been changed.", true);
+      showState("We couldn’t load your contacts", "Check your connection and try loading your contacts again.", true);
       return false;
     } finally {
       if (version === loadVersion) region.setAttribute("aria-busy", "false");
     }
   }
 
-  retry.addEventListener("click", loadContacts);
+  retry.addEventListener("click", async () => {
+    const refreshed = await loadContacts();
+    if (refreshed && notice.textContent.startsWith("Contact deleted successfully, but")) {
+      notice.textContent = "Contact deleted successfully. Your connections are up to date.";
+    }
+  });
 
   const dialog = document.getElementById("contact-dialog");
   const form = document.getElementById("contact-form");
@@ -256,6 +267,69 @@
       // Refresh replaces card nodes; focus the replacement Edit button, or a safe fallback.
       ((refreshed && editButtons.get(updatingId)) || addButton).focus();
     }
+  });
+  const deleteDialog = document.getElementById("delete-dialog");
+  const deleteName = document.getElementById("delete-name");
+  const deleteError = document.getElementById("delete-error");
+  const deleteProgress = document.getElementById("delete-progress");
+  const cancelDelete = document.getElementById("cancel-delete");
+  const confirmDelete = document.getElementById("confirm-delete");
+  let deleteTarget = null;
+  let deleteTrigger = addButton;
+  let deleting = false;
+
+  function openDelete(contact, trigger) {
+    deleteTarget = contact.id;
+    deleteTrigger = trigger;
+    deleteName.textContent = contact.name;
+    deleteError.hidden = true;
+    deleteError.textContent = "";
+    deleteProgress.textContent = "";
+    deleteDialog.showModal();
+    cancelDelete.focus(); // Make the safe action the keyboard default.
+  }
+
+  cancelDelete.addEventListener("click", () => {
+    if (!deleting) deleteDialog.close();
+  });
+  deleteDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (!deleting) deleteDialog.close();
+  });
+  deleteDialog.addEventListener("close", () => {
+    deleteTarget = null;
+    (deleteTrigger.isConnected === false ? addButton : deleteTrigger).focus();
+  });
+  confirmDelete.addEventListener("click", async () => {
+    if (deleting || deleteTarget === null) return;
+    deleting = true;
+    confirmDelete.disabled = true;
+    cancelDelete.disabled = true;
+    deleteDialog.setAttribute("aria-busy", "true");
+    deleteError.hidden = true;
+    deleteProgress.textContent = "Deleting contact…";
+    try {
+      await window.ContactHubAPI.deleteContact(deleteTarget);
+    } catch (error) {
+      deleteError.textContent = error.missing ? error.message
+        : "We couldn’t confirm the deletion; it may have succeeded. Cancel and reload the list before trying again.";
+      deleteError.hidden = false;
+      deleteError.focus();
+      return;
+    } finally {
+      deleting = false;
+      confirmDelete.disabled = false;
+      cancelDelete.disabled = false;
+      deleteDialog.setAttribute("aria-busy", "false");
+      deleteProgress.textContent = "";
+    }
+    deleteDialog.close();
+    notice.textContent = "Contact deleted. Refreshing your connections…";
+    notice.hidden = false;
+    const refreshed = await loadContacts();
+    notice.textContent = refreshed ? "Contact deleted successfully. Your connections are up to date."
+      : "Contact deleted successfully, but the list couldn’t refresh. Use Try again to reload your connections; don’t repeat the deletion.";
+    addButton.focus(); // The deleted card no longer has a button to return to.
   });
   loadContacts();
 })();

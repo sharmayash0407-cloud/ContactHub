@@ -116,3 +116,13 @@ button:disabled { opacity: .6; cursor: wait; }
 
 .edit-button { width: 100%; min-height: 44px; margin-top: 18px; background: #f1f2fc; color: #565dbb; font-size: 12px; font-weight: 600; }
 .edit-button:hover { background: #e8eafb; }
+
+.delete-button { width: 100%; min-height: 44px; margin-top: 8px; background: #fff; border: 1px solid #eedce0; color: #a13e4c; font-size: 12px; font-weight: 600; }
+.delete-button:hover { background: #fff1f3; }
+.delete-content { padding: 28px; }
+.delete-content h2 { font-size: 26px; letter-spacing: -.7px; margin: 0 0 16px; }
+#delete-description { font-size: 14px; color: #69748b; line-height: 1.8; overflow-wrap: anywhere; }
+#delete-name { color: #26334c; }
+.danger-button { background: #ad3d50; }
+.danger-button:hover { background: #953044; }
+@media (max-width: 520px) { .delete-content { padding: 24px 18px; } }

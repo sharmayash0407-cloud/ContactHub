@@ -79,3 +79,23 @@ def test_edit_persists_only_selected_contact_and_preserves_count(tmp_path):
         assert edited[key] == value
     records = create_app(config).test_client().get("/api/contacts").json["contacts"]
     assert records == [edited, other]
+
+
+def test_delete_preserves_same_named_contact_and_persists_empty_state(tmp_path):
+    config = {"TESTING": True, "DATABASE": str(tmp_path / "deletion.db")}
+    client = create_app(config).test_client()
+    parser = PageParser()
+    parser.feed(client.get("/").get_data(as_text=True))
+    assert {"delete-dialog", "delete-name", "cancel-delete", "confirm-delete", "delete-error"} <= parser.ids
+    assert parser.fields["cancel-delete"]["type"] == "button"
+    assert parser.fields["confirm-delete"]["type"] == "button"
+    first = client.post("/api/contacts", json={"name": "Synthetic Same Name"}).json["contact"]
+    other = client.post("/api/contacts", json={"name": "Synthetic Same Name", "notes": "Keep intact"}).json["contact"]
+    response = client.delete(f'/api/contacts/{first["id"]}')
+    assert response.status_code == 200
+    assert response.json == {"message": "Contact deleted."}
+    assert client.get(f'/api/contacts/{first["id"]}').status_code == 404
+    assert create_app(config).test_client().get("/api/contacts").json == {"contacts": [other]}
+    assert client.delete(f'/api/contacts/{first["id"]}').status_code == 404
+    assert client.delete(f'/api/contacts/{other["id"]}').status_code == 200
+    assert create_app(config).test_client().get("/api/contacts").json == {"contacts": []}

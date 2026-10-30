@@ -2,6 +2,31 @@
 
 // This file owns network requests; app.js owns what appears on the page.
 window.ContactHubAPI = {
+  async deleteContact(id) {
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error("Invalid contact ID.");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`/api/contacts/${id}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (response.status === 404) {
+        const error = new Error("This contact no longer exists. Cancel and reload the list to see the latest contacts.");
+        error.missing = true;
+        throw error;
+      }
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || response.status !== 200 || !contentType.includes("application/json")) {
+        throw new Error("Unconfirmed deletion.");
+      }
+      const data = await response.json();
+      if (data?.message !== "Contact deleted.") throw new Error("Unconfirmed deletion.");
+    } finally {
+      clearTimeout(timeout);
+    }
+  },
   async updateContact(id, contact) {
     if (!Number.isInteger(id) || id <= 0) {
       const error = new Error("This contact is no longer available. Reload the list.");

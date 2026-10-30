@@ -98,7 +98,7 @@ class Element {
   addEventListener(name, callback) { this.listeners[name] = callback; }
   set innerHTML(value) { throw new Error('Unsafe HTML insertion'); }
 }
-function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id })) {
+function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id }), deleteContact = async () => {}) {
   const elements = {};
   const document = {
     getElementById(id) { return elements[id] ||= new Element('div'); },
@@ -109,7 +109,7 @@ function render(fetchContacts, createContact = async () => contact(), updateCont
     for (const node of Object.values(elements)) { node.value = ''; node.checked = false; }
   };
   vm.runInNewContext(appSource, { document, window: {
-    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact } } });
+    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact, deleteContact } } });
   return elements;
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -341,7 +341,7 @@ for (const [label, reply] of [
 // Edit uses the same form and validation; locate buttons from the rendered cards.
 const editButton = (elements, index = 0) => {
   const card = elements['contact-list'].children[index].children[0];
-  return card.children[card.children.length - 1];
+  return card.children.find((node) => node.className === 'edit-button');
 };
 
 test('Edit prepopulates every field and unchanged Cancel restores the triggering button without confirmation', async () => {
@@ -525,4 +525,192 @@ for (const [label, reply] of [
 }
 test('PUT propagates network failure', async () => {
   await assert.rejects(apiContext(async () => { throw new TypeError('offline'); }).updateContact(1, contact()));
+});
+const deleteCardButton = (elements, index = 0) => elements['contact-list'].children[index].children[0].children
+  .find((node) => node.className === 'delete-button');
+const confirmDeletion = (elements) => elements['confirm-delete'].listeners.click();
+
+test('Delete opens a named confirmation with Cancel focused and never requests deletion on open', async () => {
+  let calls = 0;
+  const name = '<img src=x onerror=alert(1)>';
+  const elements = render(async () => [contact({ name })], undefined, undefined, async () => { calls++; });
+  await settle();
+  const trigger = deleteCardButton(elements);
+  assert.equal(trigger.attributes['aria-label'], `Delete ${name}`);
+  trigger.listeners.click();
+  assert.equal(elements['delete-dialog'].open, true);
+  assert.equal(elements['delete-name'].textContent, name);
+  assert.equal(elements['cancel-delete'].focused, true);
+  assert.equal(calls, 0);
+});
+
+for (const action of ['Cancel', 'Escape']) {
+  test(`${action} closes deletion dialog and restores focus without a DELETE`, async () => {
+    let calls = 0;
+    const elements = render(async () => [contact()], undefined, undefined, async () => { calls++; });
+    await settle();
+    const trigger = deleteCardButton(elements);
+    trigger.listeners.click();
+    if (action === 'Cancel') elements['cancel-delete'].listeners.click();
+    else elements['delete-dialog'].listeners.cancel({ preventDefault() {} });
+    assert.equal(calls, 0);
+    assert.equal(elements['delete-dialog'].open, false);
+    assert.equal(trigger.focused, true);
+    // A stray action after closing has no selected record to delete.
+    await confirmDeletion(elements);
+    assert.equal(calls, 0);
+  });
+}
+
+test('confirmed deletion uses the selected database ID, refreshes count and preserves other contacts', async () => {
+  const remaining = contact({ id: 23, name: 'Same Name', notes: 'Keep this record' });
+  let records = [contact({ id: 8, name: 'Same Name' }), remaining];
+  let deletedId;
+  const elements = render(async () => records.slice(), undefined, undefined, async (id) => {
+    deletedId = id;
+    records = records.filter((item) => item.id !== id);
+  });
+  await settle();
+  deleteCardButton(elements).listeners.click();
+  await confirmDeletion(elements);
+  assert.equal(deletedId, 8);
+  assert.deepEqual(records, [remaining]);
+  assert.equal(elements['contact-count'].textContent, '1');
+  assert.equal(elements['contact-list'].children.length, 1);
+  assert.equal(elements['delete-dialog'].open, false);
+  assert.equal(elements['add-contact'].focused, true);
+  assert.match(elements['save-notice'].textContent, /deleted successfully/);
+});
+
+test('deleting the last contact displays the existing empty state and zero count', async () => {
+  let records = [contact()];
+  const elements = render(async () => records, undefined, undefined, async () => { records = []; });
+  await settle();
+  deleteCardButton(elements).listeners.click();
+  await confirmDeletion(elements);
+  assert.equal(elements['contact-count'].textContent, '0');
+  assert.equal(elements['directory-state'].hidden, false);
+  assert.equal(elements['contact-list'].hidden, true);
+  assert.match(elements['state-description'].textContent, /No contacts yet/);
+});
+
+test('pending deletion blocks duplicates and prevents Cancel/Escape from closing', async () => {
+  let resolveDelete;
+  let calls = 0;
+  const elements = render(async () => [contact()], undefined, undefined, () => {
+    calls++;
+    return new Promise((resolve) => { resolveDelete = resolve; });
+  });
+  await settle();
+  deleteCardButton(elements).listeners.click();
+  const pending = confirmDeletion(elements);
+  await confirmDeletion(elements);
+  elements['cancel-delete'].listeners.click();
+  elements['delete-dialog'].listeners.cancel({ preventDefault() {} });
+  assert.equal(calls, 1);
+  assert.equal(elements['confirm-delete'].disabled, true);
+  assert.equal(elements['cancel-delete'].disabled, true);
+  assert.equal(elements['delete-dialog'].open, true);
+  resolveDelete();
+  await pending;
+  assert.equal(elements['confirm-delete'].disabled, false);
+  assert.equal(elements['cancel-delete'].disabled, false);
+});
+
+for (const kind of ['404', 'server', 'network']) {
+  test(`deletion ${kind} failure keeps confirmation open with safe feedback`, async () => {
+    const elements = render(async () => [contact()], undefined, undefined, async () => {
+      const error = new Error(kind === '404' ? 'This contact no longer exists.' : 'private traceback');
+      error.missing = kind === '404';
+      throw error;
+    });
+    await settle();
+    deleteCardButton(elements).listeners.click();
+    await confirmDeletion(elements);
+    assert.equal(elements['delete-dialog'].open, true);
+    assert.equal(elements['delete-error'].hidden, false);
+    assert.equal(elements['delete-error'].focused, true);
+    assert.equal(elements['contact-count'].textContent, '1');
+    assert.equal(elements['confirm-delete'].disabled, false);
+    assert.equal(elements['save-notice'].textContent, '');
+    assert.match(elements['delete-error'].textContent, kind === '404' ? /no longer exists/ : /may have succeeded/);
+    assert.doesNotMatch(elements['delete-error'].textContent, /private traceback/);
+    elements['cancel-delete'].listeners.click();
+    assert.equal(elements['delete-dialog'].open, false);
+  });
+}
+
+test('confirmed deletion followed by failed refresh clearly distinguishes the two results', async () => {
+  let reads = 0;
+  const elements = render(async () => {
+    if (++reads > 1) throw new Error('offline');
+    return [contact()];
+  });
+  await settle();
+  deleteCardButton(elements).listeners.click();
+  await confirmDeletion(elements);
+  assert.equal(elements['delete-dialog'].open, false);
+  assert.match(elements['save-notice'].textContent, /deleted successfully, but the list couldn’t refresh/);
+  assert.equal(elements['retry-button'].hidden, false);
+  assert.equal(elements['add-contact'].focused, true);
+});
+
+test('API DELETE uses the contact ID and validates the existing 200 JSON contract', async () => {
+  let calls = 0;
+  const api = apiContext(async (url, options) => {
+    calls++;
+    assert.equal(url, '/api/contacts/23');
+    assert.equal(options.method, 'DELETE');
+    assert.equal(options.body, undefined);
+    assert.equal(options.headers.Accept, 'application/json');
+    return response({ message: 'Contact deleted.' }, { status: 200 });
+  });
+  await api.deleteContact(23);
+  assert.equal(calls, 1);
+});
+for (const id of [null, undefined, 0, -1, '23', Number.MAX_SAFE_INTEGER + 1]) {
+  test(`DELETE rejects invalid ID ${String(id)} before requesting`, async () => {
+    let calls = 0;
+    const api = apiContext(async () => { calls++; });
+    await assert.rejects(api.deleteContact(id));
+    assert.equal(calls, 0);
+  });
+}
+for (const [label, reply] of [
+  ['404', response({}, { status: 404, ok: false })],
+  ['server error', response({ message: 'private traceback' }, { status: 500, ok: false })],
+  ['HTML', response({}, { status: 200, headers: { get: () => 'text/html' } })],
+  ['malformed JSON', response({}, { status: 200, json: async () => { throw new SyntaxError(); } })],
+  ['missing confirmation', response({}, { status: 200 })],
+  ['unexpected status', response({ message: 'Contact deleted.' }, { status: 201 })],
+]) {
+  test(`API DELETE handles ${label} without falsely confirming deletion`, async () => {
+    await assert.rejects(apiContext(async () => reply).deleteContact(23), (error) => {
+      if (label === '404') assert.equal(error.missing, true);
+      assert.doesNotMatch(error.message, /private traceback/);
+      return true;
+    });
+  });
+}
+test('API DELETE propagates network failure', async () => {
+  await assert.rejects(apiContext(async () => { throw new TypeError('offline'); }).deleteContact(23));
+});
+
+test('retry after a failed post-delete refresh clears the stale failure notice', async () => {
+  let reads = 0;
+  const elements = render(async () => {
+    reads++;
+    if (reads === 1) return [contact()];
+    if (reads === 2) throw new Error('offline');
+    return [];
+  });
+  await settle();
+  deleteCardButton(elements).listeners.click();
+  await confirmDeletion(elements);
+  assert.match(elements['save-notice'].textContent, /couldn’t refresh/);
+  assert.doesNotMatch(elements['state-description'].textContent, /haven’t been changed/);
+  await elements['retry-button'].listeners.click();
+  assert.equal(elements['contact-count'].textContent, '0');
+  assert.equal(elements['contacts-region'].attributes['aria-label'], 'Contact directory');
+  assert.equal(elements['save-notice'].textContent, 'Contact deleted successfully. Your connections are up to date.');
 });

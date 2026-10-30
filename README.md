@@ -8,7 +8,7 @@ ContactHub is a learning project that will help organize personal and profession
 
 ## Current status
 
-Implemented: a responsive contact dashboard with Add and Edit Contact forms backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and noninteractive favorite indicators. Loading, empty, error, and populated states are supported, including a working retry action. The shared accessible dialog creates and edits contacts through Flask, then refreshes the list and count. Deletion controls, search, favorite filtering, and authentication are not implemented.
+Implemented: a responsive contact dashboard with Add, Edit, and confirmed Delete Contact actions backed by the Flask/SQLite CRUD API. The dashboard fetches real contacts, sorts them alphabetically, and displays names, phone numbers, emails, companies, initials, and noninteractive favorite indicators. Loading, empty, error, and populated states are supported, including a working retry action. The shared accessible dialog creates and edits contacts through Flask, then refreshes the list and count. Delete buttons open a separate named confirmation dialog. Search, favorite filtering, and authentication are not implemented.
 
 ## Planned technology stack
 
@@ -46,10 +46,10 @@ Open http://127.0.0.1:5000 in your browser. Stop the server with **Ctrl+C**. Fla
 
 ## Structure and important code
 
-- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the shared Add/Edit Contact dialog.
+- `frontend/index.html`: semantic dashboard, navigation, contact count, accessible state containers, and the shared Add/Edit Contact dialog and separate deletion confirmation.
 - `frontend/css/style.css`: layout, colors, and responsive styling.
-- `frontend/js/api.js`: same-origin GET/POST requests to `/api/contacts` and PUT requests to `/api/contacts/<id>`, JSON response validation, and a 15-second timeout.
-- `frontend/js/app.js`: alphabetical sorting, safe DOM rendering with `textContent`, initials, loading/empty/error/populated states, and shared create/edit form validation/submission. No contact values are inserted as HTML.
+- `frontend/js/api.js`: same-origin GET/POST requests to `/api/contacts` and PUT/DELETE requests to `/api/contacts/<id>`, JSON response validation, and a 15-second timeout.
+- `frontend/js/app.js`: alphabetical sorting, safe DOM rendering with `textContent`, initials, loading/empty/error/populated states, shared create/edit form validation/submission, and confirmed deletion. No contact values are inserted as HTML.
 - `backend/app.py`: `Path(__file__)` locates the frontend independently of the terminal's working folder. `Flask(...)` creates the application and maps frontend assets to `/static`. `@app.route("/")` connects the home URL to `index()`, which sends the HTML file. The `__main__` guard starts the server only when this file is run directly.
 - `backend/database.py`: opens request-scoped SQLite connections, creates the contacts table, and closes connections after requests. The database is created automatically at `backend/contacts.db` when the app starts; existing data is preserved.
 - `backend/models.py`: the `Contact` dataclass represents one record. SQL operations use `?` placeholders to keep user values separate from SQL code. Transactions commit successful changes and roll back failed ones.
@@ -81,6 +81,18 @@ Only a confirmed successful response closes the form and announces an update. A 
 Cancelling an unchanged edit closes immediately. Changes are compared with the original fields, including the favorite checkbox; Cancel/Escape asks before discarding. Failed validation or requests preserve edited values. A 404 explains that the record no longer exists. Network/server/malformed-response failures cannot confirm the update, so review the list before retrying. Raw server details are never shown. Simultaneous saves are blocked while the request is pending.
 
 The form uses the dashboard’s latest loaded data; it does not detect another browser tab changing the same record. There is no concurrent-edit conflict detection in this milestone.
+
+## Deleting a contact
+
+Each card has a labeled **Delete** button. It opens a separate native dialog that names the selected contact and explains that deletion is permanent. The contact name is inserted with `textContent`. Cancel receives initial keyboard focus; Cancel and Escape close safely without sending any request. Opening the dialog never deletes a record.
+
+Only explicitly activating **Delete** sends `DELETE /api/contacts/<id>` through the API module. The ID, not the name, selects the record, including when two contacts have the same name. While the request is pending, both actions are disabled, repeated requests are blocked, and Escape cannot close the dialog. The backend is unchanged: parameterized SQL deletes the matching ID and returns HTTP 200 with `{"message": "Contact deleted."}`.
+
+A confirmed response closes the dialog and refreshes the list and count. Deleting the final contact displays the existing empty state. Focus returns to the triggering Delete button on cancellation, and to Add Contact after successful deletion because the old card no longer exists.
+
+A 404 explains that the contact no longer exists. Server, network, timeout, or malformed-response failures never announce success; the dialog remains open with a warning that deletion may have succeeded and the list should be reloaded before retrying. If the DELETE succeeds but the subsequent GET fails, the page explicitly reports the successful deletion and failed refresh separately. Try again reloads the list without repeating the DELETE and clears that failure notice after recovery.
+
+Deletion has no undo. Destructive tests use disposable databases and synthetic contacts, never the development database. No authentication or cloud services are added.
 
 ## Contact API
 
@@ -138,7 +150,7 @@ node --test tests/frontend.test.cjs
 
 The JavaScript tests use synthetic data and a small DOM stand-in; they do not replace actual browser layout checks. The dashboard has been inspected at desktop and mobile widths. To check it yourself, run Flask, open the home page, and confirm the count/cards match `GET /api/contacts`. With an empty database, expect an empty-state message and a zero count. Browser network throttling can reveal loading; stopping Flask and clicking Try again after a failed request verifies recovery. There are no hardcoded demo contacts in the frontend.
 
-Optional phone/email/company fields use clear fallback text. Favorite stars are indicators, not controls. Contact data is shown as plain text; notes are editable in the dialog but not displayed on cards; timestamps are not displayed. The dashboard loads on each page visit, retry, and confirmed contact creation/update, without automatic polling or pagination.
+Optional phone/email/company fields use clear fallback text. Favorite stars are indicators, not controls. Contact data is shown as plain text; notes are editable in the dialog but not displayed on cards; timestamps are not displayed. The dashboard loads on each page visit, retry, and confirmed contact creation/update/deletion, without automatic polling or pagination.
 
 ## HTTP verification
 
@@ -177,4 +189,4 @@ Only push new milestones to GitHub after review and explicit permission.
 
 ## Planned future features
 
-Next, add Delete Contact with an explicit confirmation, using the existing DELETE endpoint. Search and favorites-only filtering remain future milestones.
+Next, add a small contact search feature with a clearly defined query contract and focused tests. Favorites-only filtering remains a future milestone.

@@ -52,5 +52,15 @@
       <div class="form-actions"><button id="cancel-contact" class="secondary-button" type="button">Cancel</button><button id="save-contact" type="submit">Save Contact</button></div>
     </form>
   </dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <div class="delete-content">
+      <p class="eyebrow">CONTACT MANAGEMENT</p>
+      <h2 id="delete-title">Delete contact?</h2>
+      <p id="delete-description">Delete <strong id="delete-name"></strong>? This permanently removes this contact and cannot be undone.</p>
+      <p id="delete-error" class="form-error" role="alert" tabindex="-1" hidden></p>
+      <p id="delete-progress" class="save-progress" role="status" aria-live="polite"></p>
+      <div class="form-actions"><button id="cancel-delete" class="secondary-button" type="button" autofocus>Cancel</button><button id="confirm-delete" class="danger-button" type="button">Delete</button></div>
+    </div>
+  </dialog>
 </body>
 </html>
