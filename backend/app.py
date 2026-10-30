@@ -80,7 +80,9 @@ def create_app(test_config=None):
 
     @app.get("/api/contacts")
     def contacts_list():
-        return jsonify(contacts=[contact.to_dict() for contact in models.list_contacts()])
+        query = request.args.get("search", "").strip()
+        contacts = models.list_contacts(query) if query else models.list_contacts()
+        return jsonify(contacts=[contact.to_dict() for contact in contacts])
 
     @app.get("/api/contacts/<int:contact_id>")
     def contacts_get(contact_id):

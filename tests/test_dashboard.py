@@ -29,6 +29,9 @@ def test_dashboard_and_api_share_the_flask_origin(tmp_path):
     parser.feed(page.get_data(as_text=True))
     assert parser.scripts == ["/static/js/api.js", "/static/js/app.js"]
     assert {"contact-list", "contacts-region", "contact-count", "retry-button"} <= parser.ids
+    assert {"search-form", "contact-search", "clear-search", "search-results", "count-label"} <= parser.ids
+    assert parser.fields["contact-search"]["type"] == "search"
+    assert parser.fields["contact-search"]["placeholder"] == "Search contacts..."
     for script in parser.scripts:
         assert client.get(script).status_code == 200
     created = client.post("/api/contacts", json={

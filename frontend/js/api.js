@@ -94,11 +94,13 @@ window.ContactHubAPI = {
       clearTimeout(timeout);
     }
   },
-  async getContacts() {
+  async getContacts(search = "") {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch("/api/contacts", {
+      const query = search.trim();
+      const url = query ? `/api/contacts?search=${encodeURIComponent(query)}` : "/api/contacts";
+      const response = await fetch(url, {
         headers: { Accept: "application/json" },
         signal: controller.signal,
         cache: "no-store",

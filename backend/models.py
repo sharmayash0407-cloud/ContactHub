@@ -31,8 +31,22 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
-def list_contacts():
-    rows = get_db().execute("SELECT * FROM contacts ORDER BY id").fetchall()
+def list_contacts(search=""):
+    search = search.strip()
+    if search:
+        # Escape LIKE's wildcard characters separately from binding SQL values.
+        literal = search.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        pattern = f"%{literal}%"
+        rows = get_db().execute(
+            """SELECT * FROM contacts
+               WHERE name LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!'
+                  OR email LIKE ? ESCAPE '!' OR company LIKE ? ESCAPE '!'
+               ORDER BY name COLLATE NOCASE, id""",
+            (pattern, pattern, pattern, pattern),
+        ).fetchall()
+    else:
+        # Keep the original unfiltered API order for existing clients.
+        rows = get_db().execute("SELECT * FROM contacts ORDER BY id").fetchall()
     return [Contact.from_row(row) for row in rows]
 
 

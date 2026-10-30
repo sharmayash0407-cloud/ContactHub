@@ -98,7 +98,7 @@ class Element {
   addEventListener(name, callback) { this.listeners[name] = callback; }
   set innerHTML(value) { throw new Error('Unsafe HTML insertion'); }
 }
-function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id }), deleteContact = async () => {}) {
+function render(fetchContacts, createContact = async () => contact(), updateContact = async (id, data) => contact({ ...data, id }), deleteContact = async () => {}, timers = { setTimeout, clearTimeout }) {
   const elements = {};
   const document = {
     getElementById(id) { return elements[id] ||= new Element('div'); },
@@ -106,9 +106,13 @@ function render(fetchContacts, createContact = async () => contact(), updateCont
     createDocumentFragment: () => new Element('#fragment'),
   };
   document.getElementById('contact-form').reset = () => {
-    for (const node of Object.values(elements)) { node.value = ''; node.checked = false; }
+    for (const [id, node] of Object.entries(elements)) {
+      if (['contact-name', 'contact-phone', 'contact-email', 'contact-company', 'contact-notes', 'contact-favorite'].includes(id)) {
+        node.value = ''; node.checked = false;
+      }
+    }
   };
-  vm.runInNewContext(appSource, { document, window: {
+  vm.runInNewContext(appSource, { document, ...timers, window: {
     ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact, deleteContact } } });
   return elements;
 }
@@ -714,3 +718,215 @@ test('retry after a failed post-delete refresh clears the stale failure notice',
   assert.equal(elements['contacts-region'].attributes['aria-label'], 'Contact directory');
   assert.equal(elements['save-notice'].textContent, 'Contact deleted successfully. Your connections are up to date.');
 });
+// Deterministic clock: test debounce behavior without waiting in real time.
+function searchClock() {
+  let next = 0;
+  const pending = new Map();
+  return {
+    setTimeout(callback, delay) { assert.equal(delay, 300); pending.set(++next, callback); return next; },
+    clearTimeout(id) { pending.delete(id); },
+    run() { const jobs = [...pending.values()]; pending.clear(); jobs.forEach((job) => job()); },
+    size() { return pending.size; },
+  };
+}
+function typeSearch(elements, query) {
+  elements['contact-search'].value = query;
+  elements['contact-search'].listeners.input();
+}
+
+test('API URL-encodes search text and omits blank queries', async () => {
+  const urls = [];
+  const api = apiContext(async (url) => { urls.push(url); return response({ contacts: [] }); });
+  const query = 'नमस्ते & + # ? % _';
+  await api.getContacts(`  ${query}  `);
+  await api.getContacts('   ');
+  assert.deepEqual(urls, ['/api/contacts?search=' + encodeURIComponent(query), '/api/contacts']);
+});
+
+test('rapid typing debounces into one backend query and ignores equivalent surrounding whitespace', async () => {
+  const clock = searchClock();
+  const queries = [];
+  const elements = render(async (query) => { queries.push(query); return []; }, undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'a');
+  typeSearch(elements, 'al');
+  typeSearch(elements, 'alpha');
+  assert.deepEqual(queries, ['']);
+  assert.equal(clock.size(), 1);
+  clock.run();
+  await settle();
+  assert.deepEqual(queries, ['', 'alpha']);
+  typeSearch(elements, '  alpha  ');
+  clock.run();
+  await settle();
+  assert.deepEqual(queries, ['', 'alpha']);
+});
+
+test('older success cannot replace current query even during the debounce gap', async () => {
+  const clock = searchClock();
+  let finishOld;
+  const elements = render((query) => query === '' ? new Promise((resolve) => { finishOld = resolve; })
+    : Promise.resolve([contact({ name: 'Alpha Synthetic' })]), undefined, undefined, undefined, clock);
+  typeSearch(elements, 'alpha');
+  finishOld([contact({ name: 'Stale Synthetic' })]);
+  await settle();
+  assert.equal(elements['contact-list'].hidden, true);
+  assert.equal(elements['contact-count'].textContent, '—');
+  clock.run();
+  await settle();
+  assert.equal(elements['contact-count'].textContent, '1');
+  assert.equal(elements['contact-list'].children[0].children[0].children[1].textContent, 'Alpha Synthetic');
+});
+
+test('out-of-order search responses keep the latest results and count', async () => {
+  const clock = searchClock();
+  const waiting = {};
+  const elements = render((query) => query ? new Promise((resolve) => { waiting[query] = resolve; })
+    : Promise.resolve([]), undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'old'); clock.run();
+  typeSearch(elements, 'new'); clock.run();
+  waiting.new([contact({ name: 'New Example' })]);
+  await settle();
+  waiting.old([contact({ name: 'Old Example' }), contact({ id: 2 })]);
+  await settle();
+  assert.equal(elements['contact-count'].textContent, '1');
+  assert.equal(elements['search-results'].textContent, '1 result for “new”');
+});
+
+test('search results sort alphabetically and use backend results rather than filtering cached records', async () => {
+  const clock = searchClock();
+  const elements = render(async (query) => query ? [contact({ name: 'Zeta Remote' }), contact({ id: 2, name: 'Alpha Remote' })]
+    : [contact({ name: 'Initial Example' })], undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'remote'); clock.run();
+  await settle();
+  assert.equal(elements['contact-count'].textContent, '2');
+  assert.equal(elements['count-label'].textContent, 'Matching contacts');
+  assert.equal(elements['search-results'].textContent, '2 results for “remote”');
+  assert.equal(elements['contact-list'].children[0].children[0].children[1].textContent, 'Alpha Remote');
+});
+
+test('no search matches differs from empty database and query text remains literal', async () => {
+  const clock = searchClock();
+  const elements = render(async () => [], undefined, undefined, undefined, clock);
+  await settle();
+  assert.match(elements['state-description'].textContent, /No contacts yet/);
+  const query = '<img src=x onerror=alert(1)>';
+  typeSearch(elements, query); clock.run();
+  await settle();
+  assert.equal(elements['state-title'].textContent, 'No matching contacts');
+  assert.ok(elements['state-description'].textContent.includes(query));
+  assert.equal(elements['contact-count'].textContent, '0');
+  assert.equal(elements['clear-search'].hidden, false);
+});
+
+for (const method of ['button', 'Escape']) {
+  test(`clear via ${method} cancels pending debounce and reloads the unfiltered backend list`, async () => {
+    const clock = searchClock();
+    const queries = [];
+    const elements = render(async (query) => { queries.push(query); return [contact()]; }, undefined, undefined, undefined, clock);
+    await settle();
+    typeSearch(elements, 'pending');
+    if (method === 'button') elements['clear-search'].listeners.click();
+    else elements['contact-search'].listeners.keydown({ key: 'Escape', preventDefault() {} });
+    clock.run();
+    await settle();
+    assert.deepEqual(queries, ['', '']);
+    assert.equal(elements['contact-search'].value, '');
+    assert.equal(elements['clear-search'].hidden, true);
+    assert.equal(elements['count-label'].textContent, 'Total contacts');
+    assert.equal(elements['contact-count'].textContent, '1');
+  });
+}
+
+test('search Enter flushes the debounce once without a duplicate request', async () => {
+  const clock = searchClock();
+  const queries = [];
+  const elements = render(async (query) => { queries.push(query); return []; }, undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'alpha');
+  elements['search-form'].listeners.submit({ preventDefault() {} });
+  clock.run();
+  await settle();
+  elements['search-form'].listeners.submit({ preventDefault() {} });
+  assert.deepEqual(queries, ['', 'alpha']);
+});
+
+test('failed search retries the same query and preserves entered text', async () => {
+  const clock = searchClock();
+  const queries = [];
+  let fail = true;
+  const elements = render(async (query) => {
+    queries.push(query);
+    if (query && fail) throw new Error('offline');
+    return [];
+  }, undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'alpha'); clock.run();
+  await settle();
+  assert.equal(elements['retry-button'].hidden, false);
+  assert.equal(elements['contact-search'].value, 'alpha');
+  assert.match(elements['search-results'].textContent, /Unable to load/);
+  fail = false;
+  await elements['retry-button'].listeners.click();
+  assert.deepEqual(queries, ['', 'alpha', 'alpha']);
+  assert.equal(elements['search-results'].textContent, '0 results for “alpha”');
+});
+
+test('CRUD refresh preserves current search and result count', async () => {
+  const clock = searchClock();
+  const queries = [];
+  const elements = render(async (query) => { queries.push(query); return [contact()]; }, undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'synthetic'); clock.run();
+  await settle();
+  openForm(elements);
+  elements['contact-name'].value = 'Synthetic Created Example';
+  await submit(elements);
+  assert.deepEqual(queries, ['', 'synthetic', 'synthetic']);
+  assert.equal(elements['contact-search'].value, 'synthetic');
+  assert.equal(elements['contact-count'].textContent, '1');
+});
+
+test('a stale search failure cannot replace a newer successful result', async () => {
+  const clock = searchClock();
+  let failOld;
+  const elements = render((query) => query === 'old' ? new Promise((resolve, reject) => { failOld = reject; })
+    : Promise.resolve([contact()]), undefined, undefined, undefined, clock);
+  await settle();
+  typeSearch(elements, 'old'); clock.run();
+  typeSearch(elements, 'new'); clock.run();
+  await settle();
+  failOld(new Error('late failure'));
+  await settle();
+  assert.equal(elements['contact-count'].textContent, '1');
+  assert.equal(elements['search-results'].textContent, '1 result for “new”');
+  assert.equal(elements['contact-list'].hidden, false);
+});
+
+for (const operation of ['edit', 'delete']) {
+  test(`${operation} refresh keeps search when the record leaves the matching results`, async () => {
+    const clock = searchClock();
+    const queries = [];
+    let records = [contact()];
+    const elements = render(async (query) => { queries.push(query); return records; }, undefined,
+      async () => { records = []; return contact({ name: 'No longer matches' }); },
+      async () => { records = []; }, clock);
+    await settle();
+    typeSearch(elements, 'synthetic'); clock.run();
+    await settle();
+    if (operation === 'edit') {
+      editButton(elements).listeners.click();
+      elements['contact-name'].value = 'No longer matches';
+      await submit(elements);
+    } else {
+      deleteCardButton(elements).listeners.click();
+      await confirmDeletion(elements);
+    }
+    assert.deepEqual(queries, ['', 'synthetic', 'synthetic']);
+    assert.equal(elements['contact-search'].value, 'synthetic');
+    assert.equal(elements['contact-count'].textContent, '0');
+    assert.equal(elements['state-title'].textContent, 'No matching contacts');
+  });
+}

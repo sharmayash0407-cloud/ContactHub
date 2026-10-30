@@ -8,6 +8,13 @@
   const description = document.getElementById("state-description");
   const count = document.getElementById("contact-count");
   const retry = document.getElementById("retry-button");
+  const searchInput = document.getElementById("contact-search");
+  const searchForm = document.getElementById("search-form");
+  const clearSearch = document.getElementById("clear-search");
+  const searchResults = document.getElementById("search-results");
+  const countLabel = document.getElementById("count-label");
+  let activeQuery = "";
+  let searchTimer = null;
   let loadVersion = 0;
   const editButtons = new Map();
 
@@ -68,21 +75,30 @@
   }
 
   async function loadContacts() {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+    const query = activeQuery;
     // A newer refresh wins if two GET requests finish out of order.
     const version = ++loadVersion;
     region.setAttribute("aria-label", "Contact directory");
     region.setAttribute("aria-busy", "true");
     count.textContent = "—";
+    countLabel.textContent = query ? "Matching contacts" : "Total contacts";
+    searchResults.textContent = query ? "Searching contacts…" : "Loading contacts…";
     list.replaceChildren();
     showState("Loading your contacts…", "Getting your connections ready.");
     try {
-      const contacts = await window.ContactHubAPI.getContacts();
+      const contacts = await window.ContactHubAPI.getContacts(query);
       if (version !== loadVersion) return false;
       editButtons.clear();
       contacts.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id);
       count.textContent = String(contacts.length);
+      searchResults.textContent = query
+        ? `${contacts.length} ${contacts.length === 1 ? "result" : "results"} for “${query}”`
+        : `${contacts.length} ${contacts.length === 1 ? "contact" : "contacts"}`;
       if (contacts.length === 0) {
-        showState("Your connections start here", "No contacts yet. Saved contacts will appear here when they’re available.");
+        if (query) showState("No matching contacts", `No contacts match “${query}”. Try another search or clear the search.`);
+        else showState("Your connections start here", "No contacts yet. Saved contacts will appear here when they’re available.");
       } else {
         const cards = document.createDocumentFragment();
         contacts.forEach((contact) => cards.append(contactCard(contact)));
@@ -95,6 +111,7 @@
       return true;
     } catch {
       if (version !== loadVersion) return false;
+      searchResults.textContent = "Unable to load results. Try again.";
       // Never expose raw server errors or contact values in error messages/logs.
       showState("We couldn’t load your contacts", "Check your connection and try loading your contacts again.", true);
       return false;
@@ -102,6 +119,45 @@
       if (version === loadVersion) region.setAttribute("aria-busy", "false");
     }
   }
+
+  function changeSearch(immediate = false) {
+    clearSearch.hidden = searchInput.value.length === 0;
+    const query = searchInput.value.trim();
+    if (query === activeQuery) {
+      if (immediate && searchTimer !== null) loadContacts();
+      return;
+    }
+    activeQuery = query;
+    // Invalidate older results now, even before the debounce sends the next GET.
+    ++loadVersion;
+    clearTimeout(searchTimer);
+    searchTimer = null;
+    count.textContent = "—";
+    countLabel.textContent = query ? "Matching contacts" : "Total contacts";
+    searchResults.textContent = "Waiting for search…";
+    region.setAttribute("aria-busy", "true");
+    region.setAttribute("aria-label", "Contact directory");
+    showState("Searching your contacts…", "Getting the latest matches.");
+    if (immediate) loadContacts();
+    else searchTimer = setTimeout(() => { searchTimer = null; loadContacts(); }, 300);
+  }
+  searchInput.addEventListener("input", () => changeSearch());
+  searchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    changeSearch(true);
+  });
+  clearSearch.addEventListener("click", () => {
+    searchInput.value = "";
+    changeSearch(true);
+    searchInput.focus();
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && searchInput.value) {
+      event.preventDefault();
+      searchInput.value = "";
+      changeSearch(true);
+    }
+  });
 
   retry.addEventListener("click", async () => {
     const refreshed = await loadContacts();

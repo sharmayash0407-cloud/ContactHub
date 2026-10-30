@@ -126,3 +126,13 @@ button:disabled { opacity: .6; cursor: wait; }
 .danger-button { background: #ad3d50; }
 .danger-button:hover { background: #953044; }
 @media (max-width: 520px) { .delete-content { padding: 24px 18px; } }
+
+.search-toolbar { margin: -10px 0 28px; }
+.search-toolbar label { display: block; margin-bottom: 9px; font-size: 12px; font-weight: 650; }
+.search-controls { display: flex; align-items: center; gap: 10px; }
+.search-controls input { min-width: 0; flex: 1; width: 100%; min-height: 46px; border: 1px solid #dce1ed; border-radius: 9px; padding: 12px 14px; font: inherit; font-size: 16px; color: #26334c; background: #fff; }
+.search-controls input:focus { outline: 2px solid #6268e4; outline-offset: 1px; }
+.search-controls button { min-height: 46px; margin: 0; flex-shrink: 0; }
+#search-results { min-height: 18px; margin: 9px 0 0; color: #758098; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.directory-state p { overflow-wrap: anywhere; }
+@media (max-width: 350px) { .search-controls { flex-wrap: wrap; } .search-controls button { width: 100%; } }
