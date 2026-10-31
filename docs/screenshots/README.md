@@ -1,3 +1,21 @@
+# Current v1.1 screenshot gallery
+
+Captured on 31 October 2026 from the fresh temporary installation reviewed in [the release record](../RELEASE_V1.1.md). These are unretouched native JPEG browser captures, not mockups. Every contact, company and location is fictional; emails use reserved example domains and phones use fictional 202-555-01xx values. The development database was never used for these images.
+
+| File | View | Requested viewport | Native JPEG dimensions |
+|---|---|---|---|
+| [v1.1-desktop.jpg](v1.1-desktop.jpg) | Table, search/sort and Location | 1440×900 | 1425×891 |
+| [v1.1-add.jpg](v1.1-add.jpg) | Empty Add Contact dialog | 1440×900 | 1425×891 |
+| [v1.1-edit.jpg](v1.1-edit.jpg) | Fictional portfolio contact | 1440×900 | 1425×891 |
+| [v1.1-favorites.jpg](v1.1-favorites.jpg) | Favorites view | 1440×900 | 1425×891 |
+| [v1.1-mobile.jpg](v1.1-mobile.jpg) | Header, controls and complete first stacked row | 390×1100 | 375×1019 |
+
+The taller mobile capture shows a complete contact; layout checks separately verified 390×844 and 320×568. Browser capture dimensions can differ from the requested viewport. Original bytes were preserved without resizing or retouching. The gallery contains 501 synthetic contacts; dialogs were captured empty or with AAA Portfolio Example. The known test fixture was edited and restored in the disposable installation only.
+
+[Portfolio README](../../README.md)
+
+The following captures document earlier milestones and are historical, rather than the current v1.1 interface.
+
 # Screenshot provenance
 
 Captured on 30 October 2026 from the actual ContactHub v1 Flask application running locally. These are direct browser screenshots, not generated mockups or edited UI composites.

@@ -1,20 +1,21 @@
-# ContactHub v1
+# ContactHub v1.1
 
 **Your contacts, organized simply.**
 
 ContactHub is a full-stack contact management application built with Flask, SQLite, and vanilla JavaScript. It lets you create, browse, edit, delete, search, and favorite personal or professional contacts through a responsive web interface.
 
-**Status:** ContactHub v1 — core features implemented and verified for **local, single-user use**. No hosted deployment is included.
+**Status:** ContactHub v1.1 — verified for **local, single-user use**, with second-engine and spoken screen-reader checks outstanding. No hosted deployment is included. See the [release verification record](docs/RELEASE_V1.1.md).
 
 [Screenshots](#screenshots) · [Run locally](#run-locally-on-windows) · [Testing](#testing) · [REST API](#rest-api) · [Known limitations](#known-limitations)
 
-![ContactHub desktop dashboard showing six fictional demonstration contacts](docs/screenshots/desktop-dashboard.jpg)
+![ContactHub v1.1 desktop dashboard with fictional contacts](docs/screenshots/v1.1-desktop.jpg)
 
 ## Implemented features
 
-- **Contact CRUD:** create and edit labeled fields, browse alphabetical rows, and delete only after a named confirmation.
-- **Persistent storage:** SQLite stores names, phone numbers, email addresses, companies, notes, favorites, and timestamps.
-- **Backend-powered search:** partial matches across name, phone, email, and company, with a 300 ms frontend debounce and stale-response protection.
+- **Contact CRUD:** create and edit labeled fields, browse sorted, paginated rows, and delete only after a named confirmation.
+- **Persistent storage:** SQLite stores names, phone numbers, email addresses, companies, city, locality, notes, favorites, and timestamps.
+- **Backend-powered search:** global or field-specific partial matches across name, phone, email, company, city, and locality, with a 300 ms frontend debounce and stale-response protection.
+- **Sorting and pagination:** name A–Z/Z–A, company A–Z, newest/oldest; 25 or 50 contacts per server-filtered page, with stable ID tie-breakers.
 - **Favorites:** accessible star buttons, an All Contacts/Favorites view switch, and search within Favorites.
 - **Responsive interaction:** desktop sidebar, compact mobile navigation, initials-based avatars, counts, and loading/empty/error/retry states.
 - **Validation and reliability:** backend validation, parameterized SQL, safe DOM rendering, duplicate-request prevention, and separate messages for successful saves followed by failed refreshes.
@@ -22,45 +23,37 @@ ContactHub is a full-stack contact management application built with Flask, SQLi
 
 ## Screenshots
 
-The v1.1 table milestone replaces desktop cards with a semantic table (Name, Company, Email, Phone, Location, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Server-side pagination now loads 25 contacts by default, with a 50-contact option. Field-specific search and server-side sorting are available in the search toolbar.
-
-![Responsive desktop contact table with fictional contacts](docs/screenshots/responsive-table-desktop.jpg)
-
-![Compact mobile contact rows with fictional contacts](docs/screenshots/responsive-table-mobile.jpg)
-
-The gallery below preserves the original v1 card interface and dialogs for historical context.
-
-These are real captures of the working Flask application, not mockups. All names and companies are fictional, email addresses use `example.invalid`, and phone numbers are placeholders. The screenshots used a separate disposable SQLite database; no personal contact data or demo database is included in the repository.
+Real v1.1 browser captures from a clean temporary installation containing 501 entirely fictional contacts. Email addresses use reserved example domains, phones use the fictional 202-555-01xx range, and locations are marked Demo/Example. No development database records were copied into this gallery.
 
 <details>
-<summary>Add Contact dialog</summary>
+<summary>Add Contact, including optional City and Locality</summary>
 
-![Empty Add Contact dialog with labeled fields and Save and Cancel actions](docs/screenshots/add-contact.jpg)
+![Add Contact dialog](docs/screenshots/v1.1-add.jpg)
 
 </details>
 
 <details>
-<summary>Edit Contact dialog</summary>
+<summary>Edit Contact</summary>
 
-![Edit Contact dialog prefilled with fictional Alex Example contact details](docs/screenshots/edit-contact.jpg)
+![Edit fictional contact](docs/screenshots/v1.1-edit.jpg)
 
 </details>
 
 <details>
-<summary>Favorites view</summary>
+<summary>Favorites</summary>
 
-![Favorites view showing three fictional favorite contacts](docs/screenshots/favorites.jpg)
+![Favorites with server-side pagination](docs/screenshots/v1.1-favorites.jpg)
 
 </details>
 
 <details>
 <summary>Mobile dashboard</summary>
 
-<img src="docs/screenshots/mobile-dashboard.jpg" alt="Mobile ContactHub dashboard with compact navigation and a fictional contact card" width="320">
+<img src="docs/screenshots/v1.1-mobile.jpg" alt="Compact mobile ContactHub v1.1 dashboard" width="320">
 
 </details>
 
-[Capture dimensions and provenance](docs/screenshots/README.md)
+[Capture provenance and the historical gallery](docs/screenshots/README.md)
 
 ## Technology stack
 
@@ -131,9 +124,9 @@ node --test tests/frontend.test.cjs
 
 No `npm install` is needed. Tests use isolated SQLite databases and synthetic contact data rather than your development database. JavaScript tests use a small DOM stand-in; they do not replace actual browser inspection.
 
-**Verified on 30 October 2026:** 129 Python tests and 132 JavaScript tests passed, with zero failures. Coverage includes CRUD/persistence, validation, SQL injection regressions, literal wildcard search, favorites filtering, stale responses, duplicate requests, errors, and retries.
+**Verified on 31 October 2026:** **210 Python tests and 151 JavaScript tests passed**, with zero failures, both in the existing environment and a freshly created virtual environment. The fresh Windows setup installed the documented dependencies, started Flask, initialized City/Locality, and preserved synthetic contact fields and timestamps after a server restart.
 
-The local v1 quality review also exercised a complete browser CRUD/search/favorites workflow and checked layouts at 1440×900, 768×1024, 390×844, and 320×568. This is not a formal accessibility certification. [Detailed verification notes](docs/DEVELOPMENT.md#local-v1-quality-review--30-october-2026) include the manual checks and remaining limits.
+Real HTTP workflows exercised all supported search fields, sort options, combined filters, all pages without duplicate/missing IDs, 25/50 page sizes, CRUD, last-page deletion, and clearing locations. Browser checks covered 1440×900, 768×1024, 390×844 and 320×568 without horizontal overflow or console errors. Actual versions, accessibility scope, database integrity checks and manual follow-ups are recorded in the [v1.1 release review](docs/RELEASE_V1.1.md). Historical implementation notes remain in the [development guide](docs/DEVELOPMENT.md).
 
 ## REST API
 
@@ -145,7 +138,6 @@ POST defaults omitted location fields to empty strings. PUT still requires the o
 
 Existing databases are upgraded at startup using fixed-name, nullable `ALTER TABLE ... ADD COLUMN ... TEXT` statements guarded by `PRAGMA table_info`. The migration is idempotent and also runs for fresh installations. It never rebuilds the contact table or changes existing IDs, favorites or timestamps. Back up your local SQLite database before upgrading; keep the backup ignored and stop editing while upgrading. This milestone verified a SQLite backup, tested migration twice on a copy, then migrated the development database and compared all original fields across all 501 records. Backups remain local under `backend/backups/`; none are tracked.
 
-On 31 October 2026, **210 Python tests and 151 JavaScript tests passed** alongside browser checks using a disposable 500-contact database plus one fictional location fixture. Checks included add/edit/clear, city/locality search, favorites, pagination, long values and all four supported viewport sizes. No horizontal overflow or console errors were observed. The stored development records only gained NULL columns; no real location details were collected or populated. The older screenshots below predate this Location column.
 
 ### Field-specific search and sorting
 
@@ -171,7 +163,6 @@ Sort/field changes reset to page 1 and preserve the search text and favorites vi
 
 Compatibility: a plain unpaginated request without `sort` retains its historical ID order. Filtered or paginated requests default to name A–Z. Specify `sort=name_asc` for explicit alphabetical order on an unpaginated request. Newest/oldest use existing stored timestamps; no schema changes were made.
 
-Verified on 31 October 2026: **190 Python and 145 JavaScript tests passed**. Browser checks used 500 isolated synthetic contacts across 1440×900, 768×1024, 390×844 and 320×568, including sort changes from later pages, combined company search/favorites, page-size selection and native keyboard access. No horizontal overflow or console errors were observed. Browser mutations were not repeated for this milestone; automated tests verify mutation ordering and retained selections. Spoken screen-reader output and other browser engines remain unverified.
 
 ### Server-side pagination
 
@@ -196,7 +187,6 @@ Example metadata shape (contact objects retain the existing fields):
 
 Empty matches return page 1, zero pages and an empty list; the UI shows “Page 0 of 0” and “Showing 0–0 of 0 contacts”. Requests above the final page return the final valid page, reported in metadata. SQL applies identical search/favorite conditions to COUNT and the page query in one read snapshot. Rows use `ORDER BY name COLLATE NOCASE, id LIMIT ? OFFSET ?`; OFFSET is `(page - 1) * page_size`. The original unpaginated ordering is preserved. Search still treats SQL wildcards literally.
 
-Pagination verified on 31 October 2026: 163 Python and 141 JavaScript tests passed. Browser checks used 500 isolated synthetic contacts at 1440×900, 768×1024, 390×844 and 320×568; 25/50 rendered rows, navigation, final-page boundaries, global search, combined favorites, keyboard controls and no horizontal overflow were verified. No console errors were observed. Single local HTTP-plus-JSON samples were 90.77 ms (first 25 rows), 9.21 ms (second 50-row page) and 6.77 ms (combined search/favorites); these are not benchmarks. Render timing, physical devices and spoken screen-reader output remain unverified. Offset pagination can become costly on much larger datasets; no indexing/virtualization changes were added.
 
 All endpoint paths are relative to the local Flask server. Successful responses and errors use JSON.
 
