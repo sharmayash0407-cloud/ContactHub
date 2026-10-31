@@ -5,6 +5,7 @@ function isContact(contact) {
   return contact !== null && typeof contact === "object"
     && Number.isSafeInteger(contact.id) && contact.id > 0
     && ["name", "phone", "email", "company", "notes"].every((field) => typeof contact[field] === "string")
+    && ["city", "locality"].every((field) => contact[field] == null || typeof contact[field] === "string")
     && contact.name.trim().length > 0 && typeof contact.favorite === "boolean";
 }
 
@@ -123,7 +124,7 @@ window.ContactHubAPI = {
       clearTimeout(timeout);
     }
   },
-  async getContacts(search = "", favoritesOnly = false, pagination = null) {
+  async getContacts(search = "", favoritesOnly = false, pagination = null, field = "all", sort = "name_asc") {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -131,6 +132,8 @@ window.ContactHubAPI = {
       const parameters = [];
       if (query) parameters.push(`search=${encodeURIComponent(query)}`);
       if (favoritesOnly) parameters.push("favorite=true");
+      if (field !== "all") parameters.push(`field=${encodeURIComponent(field)}`);
+      if (sort !== "name_asc") parameters.push(`sort=${encodeURIComponent(sort)}`);
       if (pagination) parameters.push(`page=${pagination.page}`, `page_size=${pagination.page_size}`);
       const url = "/api/contacts" + (parameters.length ? `?${parameters.join("&")}` : "");
       const response = await fetch(url, {

@@ -34,4 +34,10 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
-    db.commit()
+    # Existing installations gain nullable columns without rewriting any records.
+    # Fixed names only: PRAGMA checks make this safe to repeat on every startup.
+    columns = {row[1] for row in db.execute("PRAGMA table_info(contacts)")}
+    with db:
+        for column in ("city", "locality"):
+            if column not in columns:
+                db.execute(f"ALTER TABLE contacts ADD COLUMN {column} TEXT")

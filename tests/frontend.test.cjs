@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const apiSource = readFileSync('frontend/js/api.js', 'utf8');
 const appSource = readFileSync('frontend/js/app.js', 'utf8');
 const contact = (changes = {}) => ({ id: 1, name: 'Synthetic Example', phone: '',
-  email: 'synthetic@example.invalid', company: '', notes: '', favorite: false, ...changes });
+  email: 'synthetic@example.invalid', company: '', notes: '', city: '', locality: '', favorite: false, ...changes });
 
 function apiContext(fetch) {
   const context = { window: {}, fetch, AbortController, setTimeout, clearTimeout };
@@ -107,14 +107,14 @@ function render(fetchContacts, createContact = async () => contact(), updateCont
   };
   document.getElementById('contact-form').reset = () => {
     for (const [id, node] of Object.entries(elements)) {
-      if (['contact-name', 'contact-phone', 'contact-email', 'contact-company', 'contact-notes', 'contact-favorite'].includes(id)) {
+      if (['contact-name', 'contact-phone', 'contact-email', 'contact-company', 'contact-notes', 'contact-city', 'contact-locality', 'contact-favorite'].includes(id)) {
         node.value = ''; node.checked = false;
       }
     }
   };
   vm.runInNewContext(appSource, { document, ...timers, window: {
-    ContactHubAPI: { getContacts: async (query, favorites, options) => {
-      const result = await fetchContacts(query, favorites, options);
+    ContactHubAPI: { getContacts: async (query, favorites, options, field, sort) => {
+      const result = await fetchContacts(query, favorites, options, field, sort);
       if (!Array.isArray(result)) return result;
       result.sort((a,b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'}) || a.id-b.id);
       const total = result.length, total_pages = Math.ceil(total / options.page_size);
@@ -139,15 +139,15 @@ test('loading is shown until the request completes, then empty state and zero co
   assert.equal(elements['contacts-region'].attributes['aria-busy'], 'false');
 });
 
-const findClass = (node, name) => node.className === name ? node : node.children.map(child => findClass(child, name)).find(Boolean);
+const findClass = (node, name) => (node.className || '').split(/\s+/).includes(name) ? node : node.children.map(child => findClass(child, name)).find(Boolean);
 const rowPart = (elements, name, index = 0) => findClass(elements['contact-list'].children[index], name);
-test('semantic rows sort safely and expose six cells, initials and favorite state', async () => {
+test('semantic rows sort safely and expose seven cells, initials and favorite state', async () => {
   const unsafe = '<img src=x onerror=alert(1)>';
   const elements = render(async () => [contact({ id: 2, name: 'Zeta Example' }), contact({ name: 'Alpha Example', company: unsafe, favorite: true })]);
   await settle();
   const rows = elements['contact-list'].children;
   assert.equal(rows[0].tagName, 'tr');
-  assert.equal(rows[0].children.length, 6);
+  assert.equal(rows[0].children.length, 7);
   assert.equal(rows[0].children[0].tagName, 'th');
   assert.equal(rows[0].children[0].attributes.scope, 'row');
   assert.equal(rowPart(elements, 'contact-name').textContent, 'Alpha Example');
@@ -1161,7 +1161,7 @@ test('500 contacts use one request and one set of row controls', async () => {
   assert.equal(elements['contact-list'].children.length, 25);
   assert.equal(elements['contact-count'].textContent, '500');
   for (const row of elements['contact-list'].children) {
-    assert.equal(row.children.length, 6);
+    assert.equal(row.children.length, 7);
     assert.ok(findClass(row, 'edit-button'));
     assert.ok(findClass(row, 'delete-button'));
     assert.ok(findClass(row, 'favorite-toggle'));
@@ -1259,4 +1259,88 @@ test('renaming can move a record off the current page without losing total count
   assert.equal(elements['contact-count'].textContent,'26');
   assert.equal(elements['page-indicator'].textContent,'Page 2 of 2');
   assert.notEqual(rowPart(elements,'contact-name').textContent,'AAA Renamed');
+});
+
+test('field and sorting reset later pages and preserve filters across navigation and retry', async () => {
+  const calls=[]; let fail=false;
+  const elements=render(async(q,f,p,field,sort)=>{calls.push({q,f,...p,field,sort}); if(fail)throw Error('offline'); return pageRecords(75);});
+  await settle(); elements['next-page'].listeners.click(); await settle();
+  elements['search-field'].value='company'; elements['search-field'].listeners.change(); await settle();
+  assert.equal(calls.at(-1).page,1); assert.equal(calls.at(-1).field,'company');
+  elements['nav-favorites'].listeners.click(); await settle();
+  elements['contact-search'].value='tech'; elements['search-form'].listeners.submit({preventDefault(){}}); await settle();
+  elements['contact-sort'].value='name_desc'; elements['contact-sort'].listeners.change(); await settle();
+  assert.equal(calls.at(-1).q,'tech'); assert.equal(calls.at(-1).f,true); assert.equal(calls.at(-1).sort,'name_desc');
+  elements['next-page'].listeners.click(); await settle();
+  assert.equal(calls.at(-1).page,2); assert.equal(calls.at(-1).field,'company');
+  fail=true; elements['next-page'].listeners.click(); await settle(); fail=false;
+  await elements['retry-button'].listeners.click();
+  assert.equal(calls.at(-1).sort,'name_desc'); assert.equal(calls.at(-1).page,3);
+  elements['clear-search'].listeners.click(); await settle();
+  assert.equal(calls.at(-1).q,''); assert.equal(calls.at(-1).sort,'name_desc'); assert.equal(calls.at(-1).field,'company');
+});
+test('rapid sort and field changes invalidate older responses',async()=>{
+  let old;
+  const elements=render(async(q,f,p,field,sort)=>sort==='newest'&&field==='all'?new Promise(resolve=>{old=resolve;}):pageRecords(30));
+  await settle(); elements['contact-sort'].value='newest'; elements['contact-sort'].listeners.change();
+  elements['search-field'].value='email'; elements['search-field'].listeners.change(); await settle();
+  old([]); await settle();
+  assert.equal(elements['contact-count'].textContent,'30');
+  assert.equal(elements['contact-list'].children.length,25);
+});
+test('API sends allowlisted search-field and sort selections with encoded search',async()=>{
+  const api=apiContext(async url=>{
+    assert.equal(url,'/api/contacts?search=tech%20%26&favorite=true&field=company&sort=name_desc&page=2&page_size=25');
+    return response({contacts:pageRecords(25),pagination:{page:2,page_size:25,total:50,total_pages:2}});
+  });
+  assert.equal((await api.getContacts('tech &',true,{page:2,page_size:25},'company','name_desc')).contacts.length,25);
+});
+test('mutation refresh retains field and sort selections',async()=>{
+  const calls=[];
+  const elements=render(async(q,f,p,field,sort)=>{calls.push({field,sort}); return [contact()];});
+  await settle(); elements['search-field'].value='name'; elements['search-field'].listeners.change();
+  elements['contact-sort'].value='oldest'; elements['contact-sort'].listeners.change(); await settle();
+  openForm(elements); elements['contact-name'].value='Demo Created'; await submit(elements);
+  editButton(elements).listeners.click(); elements['contact-name'].value='Demo Edited'; await submit(elements);
+  await favoriteCardButton(elements).listeners.click();
+  deleteCardButton(elements).listeners.click(); await confirmDeletion(elements);
+  assert.deepEqual(calls.at(-1),{field:'name',sort:'oldest'});
+});
+
+test('location renders as safe text and prepopulates editing',async()=>{
+ const location='<img src=x onerror=alert(1)>';
+ const elements=render(async()=>[contact({city:'Demo City',locality:location})]);
+ await settle();
+ assert.equal(rowPart(elements,'location-value').textContent,location+', Demo City');
+ editButton(elements).listeners.click();
+ assert.equal(elements['contact-city'].value,'Demo City');
+ assert.equal(elements['contact-locality'].value,location);
+ elements['contact-city'].value=''; elements['cancel-contact'].listeners.click();
+ assert.equal(elements['discard-confirmation'].hidden,false);
+});
+test('create and edit send trimmed locations and allow clearing',async()=>{
+ let saved;
+ const elements=render(async()=>[contact({city:'Demo City',locality:'Demo Quarter'})],async data=>{saved=data;return contact(data);},async(id,data)=>{saved=data;return contact(data);});
+ await settle(); openForm(elements); elements['contact-name'].value='Location Fixture';
+ elements['contact-city'].value=' Demo City '; elements['contact-locality'].value=' Demo Quarter '; await submit(elements);
+ assert.equal(saved.city,'Demo City'); assert.equal(saved.locality,'Demo Quarter');
+ editButton(elements).listeners.click(); elements['contact-city'].value=''; elements['contact-locality'].value=''; await submit(elements);
+ assert.equal(saved.city,''); assert.equal(saved.locality,'');
+});
+for(const [field,limit] of [['city',100],['locality',200]]){
+ test(`oversized ${field} shows inline error before requesting a save`,async()=>{
+  let writes=0; const elements=render(async()=>[],async()=>{writes++;});
+  openForm(elements); elements['contact-name'].value='Fixture'; elements[`contact-${field}`].value='x'.repeat(limit+1);
+  await submit(elements);
+  assert.equal(writes,0); assert.equal(elements[`error-${field}`].hidden,false);
+  assert.equal(elements[`contact-${field}`].focused,true);
+ });
+}
+test('blank or legacy null location displays a fallback',async()=>{
+ const elements=render(async()=>[contact({city:null,locality:null})]); await settle();
+ assert.equal(rowPart(elements,'location-value').textContent,'Not provided');
+ editButton(elements).listeners.click(); assert.equal(elements['contact-city'].value,'');
+});
+test('API rejects malformed location fields',async()=>{
+ await assert.rejects(apiContext(async()=>response({contacts:[contact({city:42})]})).getContacts());
 });

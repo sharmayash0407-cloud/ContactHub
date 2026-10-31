@@ -22,7 +22,7 @@ ContactHub is a full-stack contact management application built with Flask, SQLi
 
 ## Screenshots
 
-The v1.1 table milestone replaces desktop cards with a semantic six-column table (Name, Company, Email, Phone, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Server-side pagination now loads 25 contacts by default, with a 50-contact option. Interactive sorting is not included.
+The v1.1 table milestone replaces desktop cards with a semantic table (Name, Company, Email, Phone, Location, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Server-side pagination now loads 25 contacts by default, with a 50-contact option. Field-specific search and server-side sorting are available in the search toolbar.
 
 ![Responsive desktop contact table with fictional contacts](docs/screenshots/responsive-table-desktop.jpg)
 
@@ -137,6 +137,42 @@ The local v1 quality review also exercised a complete browser CRUD/search/favori
 
 ## REST API
 
+### Optional city and locality
+
+Add/Edit forms accept **City (optional)** (100 characters) and **Locality (optional)** (200 characters). Strings are trimmed; explicit null, non-string and oversized inputs return HTTP 400. Both fields are searchable globally and via `field=city` / `field=locality`, together with favorites, sort and pagination. Location is displayed as “Locality, City” in one compact column, or “Not provided” if both are blank. No location-specific sort options were added.
+
+POST defaults omitted location fields to empty strings. PUT still requires the original six editable fields, while omitted city/locality preserve the record's current location for older clients. Send `"city": ""` and `"locality": ""` to clear them. Responses include both fields as strings, with database NULL normalized to `""`; the existing contacts/contact/pagination envelopes are unchanged.
+
+Existing databases are upgraded at startup using fixed-name, nullable `ALTER TABLE ... ADD COLUMN ... TEXT` statements guarded by `PRAGMA table_info`. The migration is idempotent and also runs for fresh installations. It never rebuilds the contact table or changes existing IDs, favorites or timestamps. Back up your local SQLite database before upgrading; keep the backup ignored and stop editing while upgrading. This milestone verified a SQLite backup, tested migration twice on a copy, then migrated the development database and compared all original fields across all 501 records. Backups remain local under `backend/backups/`; none are tracked.
+
+On 31 October 2026, **210 Python tests and 151 JavaScript tests passed** alongside browser checks using a disposable 500-contact database plus one fictional location fixture. Checks included add/edit/clear, city/locality search, favorites, pagination, long values and all four supported viewport sizes. No horizontal overflow or console errors were observed. The stored development records only gained NULL columns; no real location details were collected or populated. The older screenshots below predate this Location column.
+
+### Field-specific search and sorting
+
+Select **Search in**: `all` (default), `name`, `phone`, `email`, `company`, `city`, or `locality`. Partial search remains case-insensitive for ASCII and treats `%`, `_`, and the escape character literally. Changing fields applies the existing query to that field and resets page 1; Clear search clears only the text and retains field, sort and favorites selections.
+
+Select **Sort contacts**:
+
+| API value | Order |
+|---|---|
+| `name_asc` (dashboard default) | Name A–Z, then ID ascending |
+| `name_desc` | Name Z–A, then ID ascending |
+| `company_asc` | Company A–Z, missing companies last; then name and ID ascending |
+| `newest` | Creation timestamp descending, then ID descending |
+| `oldest` | Creation timestamp ascending, then ID ascending |
+
+```text
+GET /api/contacts?search=tech&field=company&sort=name_desc&favorite=true&page=2&page_size=25
+```
+
+Flask validates `field` and `sort` against fixed allowlists and rejects invalid, empty, or repeated values with JSON HTTP 400 errors. SQLite applies field search and favorites consistently to both COUNT and page queries, with sorting before LIMIT/OFFSET. SQL column names and ORDER BY fragments come only from fixed mappings; search values remain bound parameters. Pagination metadata and contact response fields are unchanged.
+
+Sort/field changes reset to page 1 and preserve the search text and favorites view. Pagination, page size, refresh after mutations, and retry retain the selections. Debounce and stale-response protection remain active. A contact can move off the current page after creation/editing or disappear from filtered results after unfavoriting/deletion. Selections reset on a full page reload.
+
+Compatibility: a plain unpaginated request without `sort` retains its historical ID order. Filtered or paginated requests default to name A–Z. Specify `sort=name_asc` for explicit alphabetical order on an unpaginated request. Newest/oldest use existing stored timestamps; no schema changes were made.
+
+Verified on 31 October 2026: **190 Python and 145 JavaScript tests passed**. Browser checks used 500 isolated synthetic contacts across 1440×900, 768×1024, 390×844 and 320×568, including sort changes from later pages, combined company search/favorites, page-size selection and native keyboard access. No horizontal overflow or console errors were observed. Browser mutations were not repeated for this milestone; automated tests verify mutation ordering and retained selections. Spoken screen-reader output and other browser engines remain unverified.
+
 ### Server-side pagination
 
 The dashboard requests `GET /api/contacts?page=1&page_size=25`. Previous/Next controls fetch only the requested rows; the summary uses the total matching count from Flask. Choose 25 (default) or 50 (maximum) contacts per page. Changing search, favorites view or page size resets to page 1. Retrying keeps the requested page and filters. Saves refresh the current view; renamed records may move between pages, and deletion/unfavoriting clamps the view to the last valid page when necessary.
@@ -175,7 +211,7 @@ All endpoint paths are relative to the local Flask server. Successful responses 
 | PATCH | `/api/contacts/<id>/favorite` | Set favorite status | 200, `{"contact": {...}}` |
 | DELETE | `/api/contacts/<id>` | Permanently delete a contact | 200, `{"message": "Contact deleted."}` |
 
-POST requires a nonblank name. PUT requires all six editable fields. Example JSON:
+POST requires a nonblank name. PUT requires the original six editable fields; city and locality are optional. Example JSON:
 
 ```json
 {
@@ -190,7 +226,7 @@ POST requires a nonblank name. PUT requires all six editable fields. Example JSO
 
 Send `Content-Type: application/json` for POST, PUT, and PATCH. Favorite PATCH accepts only `{"favorite": true}` or `{"favorite": false}`. IDs and UTC timestamps are generated by the backend.
 
-Text limits: name/company 200, phone 50, email 254, notes 5000 characters. Optional text fields default to empty strings on creation; favorite defaults to false. Errors use `{"error": {"code": "...", "message": "..."}}`, with 400, 404, 405, 415, or 500 as appropriate.
+Text limits: name/company 200, phone 50, email 254, notes 5000, city 100, locality 200 characters. Optional text fields default to empty strings on creation; favorite defaults to false. Errors use `{"error": {"code": "...", "message": "..."}}`, with 400, 404, 405, 415, or 500 as appropriate.
 
 Search treats `%` and `_` literally. `favorite=true` filters favorites; `favorite=false` or omission means all contacts. Invalid or repeated search/favorite parameters are rejected where documented in the [development guide](docs/DEVELOPMENT.md#favorites). The frontend displays alphabetical results; the original unfiltered API retains ID order.
 

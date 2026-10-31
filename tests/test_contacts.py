@@ -160,7 +160,7 @@ def test_persistence_across_app_instances(app, client):
 def test_database_failure_is_json_and_hides_details(client, monkeypatch):
     from backend import models
 
-    def fail():
+    def fail(*args, **kwargs):
         raise sqlite3.OperationalError("private database path")
 
     monkeypatch.setattr(models, "list_contacts", fail)

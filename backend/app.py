@@ -16,7 +16,7 @@ from backend.database import close_db, init_db
 from backend import models
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-TEXT_LIMITS = {"name": 200, "phone": 50, "email": 254, "company": 200, "notes": 5000}
+TEXT_LIMITS = {"name": 200, "phone": 50, "email": 254, "company": 200, "notes": 5000, "city": 100, "locality": 200}
 EDITABLE_FIELDS = set(TEXT_LIMITS) | {"favorite"}
 
 
@@ -32,10 +32,12 @@ def validate_contact(data, require_all=False):
         raise ValueError("Unknown or read-only fields are not allowed.")
     if "name" not in data:
         raise ValueError("Name is required.")
-    if require_all and EDITABLE_FIELDS - set(data):
+    if require_all and (EDITABLE_FIELDS - {"city", "locality"}) - set(data):
         raise ValueError("PUT requires name, phone, email, company, notes, and favorite.")
     result = {}
     for field, limit in TEXT_LIMITS.items():
+        if require_all and field in ("city", "locality") and field not in data:
+            continue  # Older PUT clients preserve existing location values.
         value = data.get(field, "")
         if not isinstance(value, str):
             raise ValueError(f"{field} must be a string.")
@@ -85,6 +87,11 @@ def create_app(test_config=None):
         favorite = request.args.get("favorite", "false")
         if favorite not in ("true", "false"):
             return error_response("validation_error", "favorite must be true or false.", 400)
+        for key, allowed, default in (("field", models.SEARCH_FIELDS, "all"), ("sort", models.SORT_ORDERS, "name_asc")):
+            if len(request.args.getlist(key)) > 1 or request.args.get(key, default) not in allowed:
+                return error_response("validation_error", f"{key} must appear once and be one of: {', '.join(allowed)}.", 400)
+        field = request.args.get("field", "all")
+        sort = request.args.get("sort")
         query = request.args.get("search", "").strip()
         if "page" in request.args or "page_size" in request.args:
             for key in ("page", "page_size"):
@@ -96,9 +103,9 @@ def create_app(test_config=None):
             page_size = int(request.args.get("page_size", "25"))
             if page_size not in (25, 50):
                 return error_response("validation_error", "page_size must be 25 or 50.", 400)
-            contacts, pagination = models.list_contacts(query, favorite == "true", page, page_size)
+            contacts, pagination = models.list_contacts(query, favorite == "true", page, page_size, field, sort)
             return jsonify(contacts=[contact.to_dict() for contact in contacts], pagination=pagination)
-        contacts = models.list_contacts(query, favorite == "true") if query or favorite == "true" else models.list_contacts()
+        contacts = models.list_contacts(query, favorite == "true", field=field, sort=sort)
         return jsonify(contacts=[contact.to_dict() for contact in contacts])
 
     @app.patch("/api/contacts/<int:contact_id>/favorite")

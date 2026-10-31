@@ -30,7 +30,7 @@ def test_dashboard_and_api_share_the_flask_origin(tmp_path):
     assert page.status_code == 200
     parser = PageParser()
     parser.feed(page.get_data(as_text=True))
-    assert parser.column_headers == ["col"] * 6
+    assert parser.column_headers == ["col"] * 7
     assert "contact-table" in parser.ids
     assert parser.scripts == ["/static/js/api.js", "/static/js/app.js"]
     assert {"contact-list", "contacts-region", "contact-count", "retry-button"} <= parser.ids

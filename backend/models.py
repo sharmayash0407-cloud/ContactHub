@@ -16,11 +16,15 @@ class Contact:
     favorite: bool
     created_at: str
     updated_at: str
+    city: str = ""
+    locality: str = ""
 
     @classmethod
     def from_row(cls, row):
         values = dict(row)
         values["favorite"] = bool(values["favorite"])
+        for field in ("city", "locality"):
+            values[field] = values.get(field) or ""
         return cls(**values)
 
     def to_dict(self):
@@ -31,7 +35,21 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
-def list_contacts(search="", favorites_only=False, page=None, page_size=25):
+SEARCH_FIELDS = {"all": ("name", "phone", "email", "company", "city", "locality"),
+                 **{column: (column,) for column in ("name", "phone", "email", "company", "city", "locality")}}
+SORT_ORDERS = {
+    "name_asc": "name COLLATE NOCASE ASC, id ASC",
+    "name_desc": "name COLLATE NOCASE DESC, id ASC",
+    # Missing companies follow named companies, then sort by name and ID.
+    "company_asc": "(trim(COALESCE(company, '')) = '') ASC, COALESCE(company, '') COLLATE NOCASE ASC, name COLLATE NOCASE ASC, id ASC",
+    "newest": "created_at DESC, id DESC",
+    "oldest": "created_at ASC, id ASC",
+}
+
+
+def list_contacts(search="", favorites_only=False, page=None, page_size=25, field="all", sort=None):
+    columns = SEARCH_FIELDS[field]
+    order = " ORDER BY " + SORT_ORDERS[sort or "name_asc"]
     search = search.strip()
     conditions = []
     parameters = []
@@ -39,9 +57,8 @@ def list_contacts(search="", favorites_only=False, page=None, page_size=25):
         # Bind SQL values and escape LIKE wildcards for literal partial matches.
         literal = search.replace("!", "!!").replace("%", "!%").replace("_", "!_")
         pattern = f"%{literal}%"
-        conditions.append("""(name LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!'
-                              OR email LIKE ? ESCAPE '!' OR company LIKE ? ESCAPE '!')""")
-        parameters.extend([pattern] * 4)
+        conditions.append("(" + " OR ".join(f"{column} LIKE ? ESCAPE '!'" for column in columns) + ")")
+        parameters.extend([pattern] * len(columns))
     if favorites_only:
         conditions.append("favorite = ?")
         parameters.append(1)
@@ -56,11 +73,12 @@ def list_contacts(search="", favorites_only=False, page=None, page_size=25):
             total_pages = (total + page_size - 1) // page_size
             page = min(page, max(1, total_pages))
             rows = db.execute("SELECT * FROM contacts" + where +
-                " ORDER BY name COLLATE NOCASE, id LIMIT ? OFFSET ?",
+                order + " LIMIT ? OFFSET ?",
                 [*parameters, page_size, (page - 1) * page_size]).fetchall()
         return [Contact.from_row(row) for row in rows], dict(
             page=page, page_size=page_size, total=total, total_pages=total_pages)
-    order = " ORDER BY name COLLATE NOCASE, id" if conditions else " ORDER BY id"
+    if sort is None and not conditions:
+        order = " ORDER BY id"  # Preserve legacy unpaginated callers without a sort parameter.
     rows = db.execute("SELECT * FROM contacts" + where + order, parameters).fetchall()
     return [Contact.from_row(row) for row in rows]
 
@@ -92,10 +110,10 @@ def create_contact(data):
     with db:
         cursor = db.execute(
             """INSERT INTO contacts
-               (name, phone, email, company, notes, favorite, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (name, phone, email, company, notes, favorite, created_at, updated_at, city, locality)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data["name"], data["phone"], data["email"], data["company"],
-             data["notes"], data["favorite"], now, now),
+             data["notes"], data["favorite"], now, now, data.get("city", ""), data.get("locality", "")),
         )
     return find_contact(cursor.lastrowid)
 
@@ -105,9 +123,10 @@ def update_contact(contact_id, data):
     with db:
         cursor = db.execute(
             """UPDATE contacts SET name = ?, phone = ?, email = ?, company = ?,
-               notes = ?, favorite = ?, updated_at = ? WHERE id = ?""",
+               notes = ?, favorite = ?, updated_at = ?,
+               city = COALESCE(?, city), locality = COALESCE(?, locality) WHERE id = ?""",
             (data["name"], data["phone"], data["email"], data["company"],
-             data["notes"], data["favorite"], timestamp(), contact_id),
+             data["notes"], data["favorite"], timestamp(), data.get("city"), data.get("locality"), contact_id),
         )
     return find_contact(contact_id) if cursor.rowcount else None
 

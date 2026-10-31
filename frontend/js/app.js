@@ -19,6 +19,23 @@
   const pageIndicator = document.getElementById("page-indicator");
   const pageRange = document.getElementById("page-range");
   const pageSizeSelect = document.getElementById("page-size");
+  const searchField = document.getElementById("search-field");
+  const sortSelect = document.getElementById("contact-sort");
+  const sortDescription = document.getElementById("sort-description");
+  const sortLabels = { name_asc: "Name · A–Z", name_desc: "Name · Z–A", company_asc: "Company · A–Z", newest: "Newest first", oldest: "Oldest first" };
+  let activeField = "all";
+  let activeSort = "name_asc";
+  searchField.addEventListener("change", () => {
+    activeField = searchField.value;
+    currentPage = 1;
+    loadContacts();
+  });
+  sortSelect.addEventListener("change", () => {
+    activeSort = sortSelect.value;
+    sortDescription.textContent = sortLabels[activeSort];
+    currentPage = 1;
+    loadContacts();
+  });
   let currentPage = 1;
   let pageSize = 25;
   let totalPages = 0;
@@ -74,6 +91,9 @@
       cell.setAttribute("data-label", label);
       row.append(cell);
     }
+    const location = element("td", "contact-value location-value", [contact.locality, contact.city].filter(Boolean).join(", ") || "Not provided");
+    location.setAttribute("data-label", "Location");
+    row.append(location);
     const favoriteButton = element("button", "favorite-toggle", contact.favorite ? "★" : "☆");
     favoriteButton.type = "button";
     favoriteButton.setAttribute("aria-label", `Favorite ${contact.name}`);
@@ -136,7 +156,7 @@
     list.replaceChildren();
     showState("Loading your contacts…", "Getting your connections ready.");
     try {
-      const result = await window.ContactHubAPI.getContacts(query, onlyFavorites, { page: requestedPage, page_size: requestedSize });
+      const result = await window.ContactHubAPI.getContacts(query, onlyFavorites, { page: requestedPage, page_size: requestedSize }, activeField, activeSort);
       const { contacts, pagination } = result;
       if (version !== loadVersion) return false;
       editButtons.clear();
@@ -294,7 +314,7 @@
   const discardConfirmation = document.getElementById("discard-confirmation");
   const keepEditing = document.getElementById("keep-editing");
   const discardButton = document.getElementById("discard-contact");
-  const limits = { name: 200, phone: 50, email: 254, company: 200, notes: 5000 };
+  const limits = { name: 200, phone: 50, email: 254, company: 200, notes: 5000, city: 100, locality: 200 };
   const fields = Object.fromEntries(Object.keys(limits).map((key) => [key, document.getElementById(`contact-${key}`)]));
   const favorite = document.getElementById("contact-favorite");
   const formTitle = document.getElementById("form-title");
@@ -343,7 +363,7 @@
   function openForm(contact = null, trigger = addButton) {
     editingId = contact ? contact.id : null;
     returnFocus = trigger;
-    for (const [key, field] of Object.entries(fields)) field.value = contact ? contact[key] : "";
+    for (const [key, field] of Object.entries(fields)) field.value = contact ? (contact[key] || "") : "";
     favorite.checked = contact ? contact.favorite : false;
     originalValues = valuesSnapshot();
     formTitle.textContent = contact ? "Edit Contact" : "Add a contact";

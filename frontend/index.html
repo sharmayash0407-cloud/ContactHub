@@ -29,16 +29,20 @@
       <form id="search-form" class="search-toolbar" role="search">
         <label for="contact-search">Search contacts</label>
         <div class="search-controls"><input id="contact-search" name="search" type="search" placeholder="Search contacts..." autocomplete="off" aria-describedby="search-results"><button id="clear-search" class="secondary-button" type="button" hidden>Clear search</button></div>
+        <div class="search-options">
+          <label for="search-field">Search in <select id="search-field"><option value="all">All fields</option><option value="name">Name</option><option value="phone">Phone</option><option value="email">Email</option><option value="company">Company</option><option value="city">City</option><option value="locality">Locality</option></select></label>
+          <label for="contact-sort">Sort contacts <select id="contact-sort"><option value="name_asc">Name: A–Z</option><option value="name_desc">Name: Z–A</option><option value="company_asc">Company: A–Z</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+        </div>
         <p id="search-results" role="status" aria-live="polite">Loading contacts…</p>
       </form>
-      <div class="list-heading"><h2>Your connections</h2><span>Alphabetical · A–Z</span></div>
+      <div class="list-heading"><h2>Your connections</h2><span id="sort-description">Name · A–Z</span></div>
       <p id="save-notice" class="save-notice" role="status" aria-live="polite" aria-atomic="true"></p>
       <section id="contacts-region" aria-label="Contact directory" aria-busy="true">
         <div id="directory-state" class="directory-state" role="status" aria-live="polite"><span class="state-icon" aria-hidden="true">◎</span><h2 id="state-title">Loading your contacts…</h2><p id="state-description">Getting your connections ready.</p><button id="retry-button" type="button" hidden>Try again</button></div>
         <table id="contact-table" class="contact-table" hidden>
-          <caption class="visually-hidden">Contacts ordered alphabetically by name</caption>
-          <colgroup><col class="col-name"><col class="col-company"><col class="col-email"><col class="col-phone"><col class="col-favorite"><col class="col-actions"></colgroup>
-          <thead><tr><th scope="col">Name</th><th scope="col">Company</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Favorite</th><th scope="col">Actions</th></tr></thead>
+          <caption class="visually-hidden">Contact directory</caption>
+          <colgroup><col class="col-name"><col class="col-company"><col class="col-email"><col class="col-phone"><col class="col-location"><col class="col-favorite"><col class="col-actions"></colgroup>
+          <thead><tr><th scope="col">Name</th><th scope="col">Company</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Location</th><th scope="col">Favorite</th><th scope="col">Actions</th></tr></thead>
           <tbody id="contact-list" hidden></tbody>
         </table>
         <nav id="pagination-controls" class="pagination-controls" aria-label="Contact pages">
@@ -61,6 +65,8 @@
         <div class="form-field"><label for="contact-phone">Phone Number</label><input id="contact-phone" name="phone" type="tel" maxlength="50" autocomplete="tel" aria-describedby="error-phone"><p id="error-phone" class="field-error" hidden></p></div>
         <div class="form-field"><label for="contact-email">Email Address</label><input id="contact-email" name="email" type="email" maxlength="254" autocomplete="email" aria-describedby="error-email"><p id="error-email" class="field-error" hidden></p></div>
         <div class="form-field full-width"><label for="contact-company">Company</label><input id="contact-company" name="company" type="text" maxlength="200" autocomplete="organization" aria-describedby="error-company"><p id="error-company" class="field-error" hidden></p></div>
+        <div class="form-field"><label for="contact-city">City (optional)</label><input id="contact-city" name="city" type="text" maxlength="100" autocomplete="address-level2" aria-describedby="error-city"><p id="error-city" class="field-error" hidden></p></div>
+        <div class="form-field"><label for="contact-locality">Locality (optional)</label><input id="contact-locality" name="locality" type="text" maxlength="200" aria-describedby="error-locality"><p id="error-locality" class="field-error" hidden></p></div>
         <div class="form-field full-width"><label for="contact-notes">Notes</label><textarea id="contact-notes" name="notes" rows="3" maxlength="5000" aria-describedby="error-notes"></textarea><p id="error-notes" class="field-error" hidden></p></div>
         <label class="favorite-option full-width" for="contact-favorite"><input id="contact-favorite" name="favorite" type="checkbox"> Mark as favorite</label>
       </div>
