@@ -31,7 +31,7 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
-def list_contacts(search="", favorites_only=False):
+def list_contacts(search="", favorites_only=False, page=None, page_size=25):
     search = search.strip()
     conditions = []
     parameters = []
@@ -46,12 +46,24 @@ def list_contacts(search="", favorites_only=False):
         conditions.append("favorite = ?")
         parameters.append(1)
     # Only fixed SQL fragments are combined; user values stay in parameters.
-    query = "SELECT * FROM contacts"
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY name COLLATE NOCASE, id" if conditions else " ORDER BY id"
-    rows = get_db().execute(query, parameters).fetchall()
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    db = get_db()
+    if page is not None:
+        # One read snapshot keeps count and rows consistent during concurrent writes.
+        with db:
+            db.execute("BEGIN")
+            total = db.execute("SELECT COUNT(*) FROM contacts" + where, parameters).fetchone()[0]
+            total_pages = (total + page_size - 1) // page_size
+            page = min(page, max(1, total_pages))
+            rows = db.execute("SELECT * FROM contacts" + where +
+                " ORDER BY name COLLATE NOCASE, id LIMIT ? OFFSET ?",
+                [*parameters, page_size, (page - 1) * page_size]).fetchall()
+        return [Contact.from_row(row) for row in rows], dict(
+            page=page, page_size=page_size, total=total, total_pages=total_pages)
+    order = " ORDER BY name COLLATE NOCASE, id" if conditions else " ORDER BY id"
+    rows = db.execute("SELECT * FROM contacts" + where + order, parameters).fetchall()
     return [Contact.from_row(row) for row in rows]
+
 
 
 def set_favorite(contact_id, favorite):

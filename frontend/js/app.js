@@ -14,6 +14,29 @@
   const clearSearch = document.getElementById("clear-search");
   const searchResults = document.getElementById("search-results");
   const countLabel = document.getElementById("count-label");
+  const previousPage = document.getElementById("previous-page");
+  const nextPage = document.getElementById("next-page");
+  const pageIndicator = document.getElementById("page-indicator");
+  const pageRange = document.getElementById("page-range");
+  const pageSizeSelect = document.getElementById("page-size");
+  let currentPage = 1;
+  let pageSize = 25;
+  let totalPages = 0;
+  async function changePage(page) {
+    currentPage = page;
+    const requestedVersion = loadVersion + 1;
+    const loaded = await loadContacts();
+    if (requestedVersion !== loadVersion) return;
+    if (!loaded) retry.focus();
+    else (!nextPage.disabled ? nextPage : !previousPage.disabled ? previousPage : pageSizeSelect).focus();
+  }
+  previousPage.addEventListener("click", () => { if (currentPage > 1) changePage(currentPage - 1); });
+  nextPage.addEventListener("click", () => { if (currentPage < totalPages) changePage(currentPage + 1); });
+  pageSizeSelect.addEventListener("change", () => {
+    pageSize = Number(pageSizeSelect.value);
+    currentPage = 1;
+    loadContacts();
+  });
   let activeQuery = "";
   let favoritesOnly = false;
   const allNavigation = document.getElementById("nav-all");
@@ -98,6 +121,11 @@
     searchTimer = null;
     const query = activeQuery;
     const onlyFavorites = favoritesOnly;
+    const requestedPage = currentPage;
+    const requestedSize = pageSize;
+    previousPage.disabled = nextPage.disabled = true;
+    pageIndicator.textContent = "Loading page…";
+    pageRange.textContent = "";
     // A newer refresh wins if two GET requests finish out of order.
     const version = ++loadVersion;
     region.setAttribute("aria-label", "Contact directory");
@@ -108,16 +136,26 @@
     list.replaceChildren();
     showState("Loading your contacts…", "Getting your connections ready.");
     try {
-      const contacts = await window.ContactHubAPI.getContacts(query, onlyFavorites);
+      const result = await window.ContactHubAPI.getContacts(query, onlyFavorites, { page: requestedPage, page_size: requestedSize });
+      const { contacts, pagination } = result;
       if (version !== loadVersion) return false;
       editButtons.clear();
       favoriteButtons.clear();
       contactActions.clear();
-      contacts.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id);
-      count.textContent = String(contacts.length);
+      // SQLite owns ordering across page boundaries; never reorder a page locally.
+      currentPage = pagination.page;
+      totalPages = pagination.total_pages;
+      previousPage.disabled = currentPage <= 1;
+      nextPage.disabled = currentPage >= totalPages;
+      pageIndicator.textContent = `Page ${totalPages ? currentPage : 0} of ${totalPages}`;
+      const first = pagination.total ? (currentPage - 1) * pageSize + 1 : 0;
+      const last = pagination.total ? first + contacts.length - 1 : 0;
+      pageRange.textContent = `Showing ${first}–${last} of ${pagination.total} contacts`;
+
+      count.textContent = String(pagination.total);
       searchResults.textContent = query
-        ? `${contacts.length} ${contacts.length === 1 ? "result" : "results"} for “${query}”${onlyFavorites ? " in Favorites" : ""}`
-        : `${contacts.length} ${onlyFavorites ? (contacts.length === 1 ? "favorite" : "favorites") : (contacts.length === 1 ? "contact" : "contacts")}`;
+        ? `${pagination.total} ${pagination.total === 1 ? "result" : "results"} for “${query}”${onlyFavorites ? " in Favorites" : ""}`
+        : `${pagination.total} ${onlyFavorites ? (pagination.total === 1 ? "favorite" : "favorites") : (pagination.total === 1 ? "contact" : "contacts")}`;
       if (contacts.length === 0) {
         if (query) showState(onlyFavorites ? "No matching favorites" : "No matching contacts", `No ${onlyFavorites ? "favorites" : "contacts"} match “${query}”. Try another search or clear the search.`);
         else if (onlyFavorites) showState("No favorites yet", "Mark a contact with the star button to find it here. Your other contacts are available in All Contacts.");
@@ -135,6 +173,7 @@
       return true;
     } catch {
       if (version !== loadVersion) return false;
+      pageIndicator.textContent = "Page unavailable";
       searchResults.textContent = "Unable to load results. Try again.";
       // Never expose raw server errors or contact values in error messages/logs.
       showState("We couldn’t load your contacts", "Check your connection and try loading your contacts again.", true);
@@ -152,6 +191,8 @@
       return;
     }
     activeQuery = query;
+    currentPage = 1;
+    previousPage.disabled = nextPage.disabled = true;
     // Invalidate older results now, even before the debounce sends the next GET.
     ++loadVersion;
     clearTimeout(searchTimer);
@@ -186,6 +227,7 @@
   function switchView(onlyFavorites) {
     if (favoritesOnly === onlyFavorites) return;
     favoritesOnly = onlyFavorites;
+    currentPage = 1;
     allNavigation.setAttribute("aria-pressed", String(!onlyFavorites));
     favoritesNavigation.setAttribute("aria-pressed", String(onlyFavorites));
     document.getElementById("page-title").textContent = onlyFavorites ? "Favorites" : "All Contacts";

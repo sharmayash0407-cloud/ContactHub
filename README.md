@@ -22,7 +22,7 @@ ContactHub is a full-stack contact management application built with Flask, SQLi
 
 ## Screenshots
 
-The v1.1 table milestone replaces desktop cards with a semantic six-column table (Name, Company, Email, Phone, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Pagination and interactive sorting are not included.
+The v1.1 table milestone replaces desktop cards with a semantic six-column table (Name, Company, Email, Phone, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Server-side pagination now loads 25 contacts by default, with a 50-contact option. Interactive sorting is not included.
 
 ![Responsive desktop contact table with fictional contacts](docs/screenshots/responsive-table-desktop.jpg)
 
@@ -137,6 +137,31 @@ The local v1 quality review also exercised a complete browser CRUD/search/favori
 
 ## REST API
 
+### Server-side pagination
+
+The dashboard requests `GET /api/contacts?page=1&page_size=25`. Previous/Next controls fetch only the requested rows; the summary uses the total matching count from Flask. Choose 25 (default) or 50 (maximum) contacts per page. Changing search, favorites view or page size resets to page 1. Retrying keeps the requested page and filters. Saves refresh the current view; renamed records may move between pages, and deletion/unfavoriting clamps the view to the last valid page when necessary.
+
+Pagination is opt-in for API callers: omitting both `page` and `page_size` preserves the original `{"contacts": [...]}` response. Supplying either enables pagination (`page` defaults to 1, `page_size` to 25). Values must be supplied once as positive ASCII decimal integers without spaces, signs or leading zeros; `page` supports up to 10 digits and `page_size` accepts only 25 or 50. Invalid values return HTTP 400 with the existing JSON error format.
+
+Example request combining filters:
+
+```text
+GET /api/contacts?page=2&page_size=25&search=rahul&favorite=true
+```
+
+Example metadata shape (contact objects retain the existing fields):
+
+```json
+{
+  "contacts": [],
+  "pagination": {"page": 1, "page_size": 25, "total": 0, "total_pages": 0}
+}
+```
+
+Empty matches return page 1, zero pages and an empty list; the UI shows “Page 0 of 0” and “Showing 0–0 of 0 contacts”. Requests above the final page return the final valid page, reported in metadata. SQL applies identical search/favorite conditions to COUNT and the page query in one read snapshot. Rows use `ORDER BY name COLLATE NOCASE, id LIMIT ? OFFSET ?`; OFFSET is `(page - 1) * page_size`. The original unpaginated ordering is preserved. Search still treats SQL wildcards literally.
+
+Pagination verified on 31 October 2026: 163 Python and 141 JavaScript tests passed. Browser checks used 500 isolated synthetic contacts at 1440×900, 768×1024, 390×844 and 320×568; 25/50 rendered rows, navigation, final-page boundaries, global search, combined favorites, keyboard controls and no horizontal overflow were verified. No console errors were observed. Single local HTTP-plus-JSON samples were 90.77 ms (first 25 rows), 9.21 ms (second 50-row page) and 6.77 ms (combined search/favorites); these are not benchmarks. Render timing, physical devices and spoken screen-reader output remain unverified. Offset pagination can become costly on much larger datasets; no indexing/virtualization changes were added.
+
 All endpoint paths are relative to the local Flask server. Successful responses and errors use JSON.
 
 | Method | Endpoint | Purpose | Success |
@@ -200,7 +225,7 @@ Virtual environments, generated databases, caches, and secret files remain exclu
 - Search case-insensitivity is limited to ASCII. Phone searches match stored formatting.
 - No undo for deletion. Interrupted responses can leave mutation outcomes uncertain; the UI explains when to reload before retrying.
 - Unsaved form data and selected views/search reset on page reload; contacts and favorite status persist.
-- No pagination or automatic polling. The table has been manually checked with 500 synthetic records; larger datasets and sustained performance benchmarks remain unverified.
+- No automatic polling. The table has been manually checked with 500 synthetic records; larger datasets and sustained performance benchmarks remain unverified.
 - Spoken screen-reader output, other browser engines, physical mobile devices, and high zoom remain additional manual checks.
 
 Possible future work includes those manual checks and small improvements based on reproducible findings. No unimplemented feature is presented as part of v1.

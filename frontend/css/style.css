@@ -157,3 +157,10 @@ button:disabled { opacity: .6; cursor: wait; }
   .contact-table .favorite-toggle { justify-self: start; min-height: 44px; min-width: 44px; }
   .contact-actions .edit-button, .contact-actions .delete-button { min-height: 44px; }
 }
+.pagination-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; font-size: 12px; color: #536079; }
+.pagination-controls p { margin: 0; }
+.page-navigation { display: flex; align-items: center; gap: 12px; }
+.page-navigation button { margin: 0; min-height: 44px; }
+.pagination-controls label { display: flex; align-items: center; gap: 8px; }
+.pagination-controls select { min-height: 44px; padding: 8px; font: inherit; border: 1px solid #858da1; border-radius: 7px; background: white; color: #26334c; }
+@media (max-width: 520px) { .pagination-controls { flex-direction: column; align-items: stretch; } .page-navigation { justify-content: space-between; gap: 6px; } }

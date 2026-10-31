@@ -41,6 +41,11 @@
           <thead><tr><th scope="col">Name</th><th scope="col">Company</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Favorite</th><th scope="col">Actions</th></tr></thead>
           <tbody id="contact-list" hidden></tbody>
         </table>
+        <nav id="pagination-controls" class="pagination-controls" aria-label="Contact pages">
+          <p id="page-range" role="status"></p>
+          <div class="page-navigation"><button id="previous-page" type="button" disabled>Previous</button><span id="page-indicator" aria-live="polite">Loading page…</span><button id="next-page" type="button" disabled>Next</button></div>
+          <label for="page-size">Contacts per page <select id="page-size"><option value="25">25</option><option value="50">50</option></select></label>
+        </nav>
       </section>
       <noscript><p class="noscript-note">Enable JavaScript to load contacts from ContactHub.</p></noscript>
       <footer class="page-footer"><span>Made for meaningful connections.</span><span>ContactHub</span></footer>

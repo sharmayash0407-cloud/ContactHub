@@ -86,6 +86,18 @@ def create_app(test_config=None):
         if favorite not in ("true", "false"):
             return error_response("validation_error", "favorite must be true or false.", 400)
         query = request.args.get("search", "").strip()
+        if "page" in request.args or "page_size" in request.args:
+            for key in ("page", "page_size"):
+                values = request.args.getlist(key)
+                value = request.args.get(key, "1" if key == "page" else "25")
+                if len(values) > 1 or not re.fullmatch(r"[1-9][0-9]{0,9}", value):
+                    return error_response("validation_error", f"{key} must be a positive integer supplied once.", 400)
+            page = int(request.args.get("page", "1"))
+            page_size = int(request.args.get("page_size", "25"))
+            if page_size not in (25, 50):
+                return error_response("validation_error", "page_size must be 25 or 50.", 400)
+            contacts, pagination = models.list_contacts(query, favorite == "true", page, page_size)
+            return jsonify(contacts=[contact.to_dict() for contact in contacts], pagination=pagination)
         contacts = models.list_contacts(query, favorite == "true") if query or favorite == "true" else models.list_contacts()
         return jsonify(contacts=[contact.to_dict() for contact in contacts])
 

@@ -113,7 +113,14 @@ function render(fetchContacts, createContact = async () => contact(), updateCont
     }
   };
   vm.runInNewContext(appSource, { document, ...timers, window: {
-    ContactHubAPI: { getContacts: fetchContacts, createContact, updateContact, deleteContact, setFavorite } } });
+    ContactHubAPI: { getContacts: async (query, favorites, options) => {
+      const result = await fetchContacts(query, favorites, options);
+      if (!Array.isArray(result)) return result;
+      result.sort((a,b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'}) || a.id-b.id);
+      const total = result.length, total_pages = Math.ceil(total / options.page_size);
+      const page = Math.min(options.page, Math.max(1, total_pages));
+      return {contacts: result.slice((page-1)*options.page_size, page*options.page_size), pagination: {page,page_size:options.page_size,total,total_pages}};
+    }, createContact, updateContact, deleteContact, setFavorite } } });
   return elements;
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -1151,7 +1158,7 @@ test('500 contacts use one request and one set of row controls', async () => {
   const elements = render(async () => { reads++; return Array.from({ length: 500 }, (_, i) => contact({ id: i + 1, name: `Fixture ${String(i).padStart(3, '0')}` })); });
   await settle();
   assert.equal(reads, 1);
-  assert.equal(elements['contact-list'].children.length, 500);
+  assert.equal(elements['contact-list'].children.length, 25);
   assert.equal(elements['contact-count'].textContent, '500');
   for (const row of elements['contact-list'].children) {
     assert.equal(row.children.length, 6);
@@ -1171,4 +1178,85 @@ test('table headers stay hidden during loading, empty and error states', async (
   const failed = render(async () => { throw new Error('offline'); });
   await settle();
   assert.equal(failed['contact-table'].hidden, true);
+});
+
+const pageRecords = n => Array.from({length:n}, (_,i)=>contact({id:i+1,name:`Fixture ${String(i).padStart(3,'0')}`}));
+test('pagination navigates, changes size, resets filters and shows backend totals', async () => {
+  const calls=[];
+  const elements=render(async (query,favorite,options)=>{ calls.push({...options,query,favorite}); return pageRecords(61); });
+  await settle();
+  assert.equal(elements['contact-list'].children.length,25);
+  assert.equal(elements['page-range'].textContent,'Showing 1–25 of 61 contacts');
+  assert.equal(elements['previous-page'].disabled,true);
+  elements['next-page'].listeners.click(); await settle();
+  assert.equal(elements['page-range'].textContent,'Showing 26–50 of 61 contacts');
+  elements['next-page'].listeners.click(); await settle();
+  assert.equal(elements['next-page'].disabled,true);
+  assert.equal(elements['contact-list'].children.length,11);
+  elements['page-size'].value='50'; elements['page-size'].listeners.change(); await settle();
+  assert.equal(calls.at(-1).page,1); assert.equal(calls.at(-1).page_size,50);
+  elements['next-page'].listeners.click(); await settle();
+  elements['nav-favorites'].listeners.click(); await settle();
+  assert.equal(calls.at(-1).page,1); assert.equal(calls.at(-1).favorite,true);
+  elements['next-page'].listeners.click(); await settle();
+  elements['contact-search'].value='Fixture'; elements['search-form'].listeners.submit({preventDefault(){}}); await settle();
+  assert.equal(calls.at(-1).page,1); assert.equal(calls.at(-1).query,'Fixture');
+});
+test('stale page responses cannot replace a newer page-size request', async () => {
+  let complete;
+  const elements=render(async (q,f,p)=>p.page===2?new Promise(resolve=>{complete=resolve;}):pageRecords(75));
+  await settle(); elements['next-page'].listeners.click();
+  elements['page-size'].value='50'; elements['page-size'].listeners.change(); await settle();
+  complete(pageRecords(75)); await settle();
+  assert.equal(elements['page-range'].textContent,'Showing 1–50 of 75 contacts');
+});
+test('page failure retries the same page', async () => {
+  let fail=true; const requests=[];
+  const elements=render(async(q,f,p)=>{ requests.push(p.page); if(p.page===2&&fail)throw Error('offline'); return pageRecords(60); });
+  await settle(); elements['next-page'].listeners.click(); await settle();
+  assert.equal(elements['retry-button'].hidden,false);
+  fail=false; await elements['retry-button'].listeners.click();
+  assert.equal(requests.at(-1),2);
+  assert.equal(elements['page-range'].textContent,'Showing 26–50 of 60 contacts');
+});
+test('API encodes opt-in pagination and rejects malformed metadata', async () => {
+  const api=apiContext(async url=>{
+    assert.equal(url,'/api/contacts?search=a%20%26&favorite=true&page=2&page_size=25');
+    return response({contacts:[],pagination:{page:2,page_size:25,total:0,total_pages:0}});
+  });
+  await assert.rejects(api.getContacts('a &',true,{page:2,page_size:25}));
+  const valid=apiContext(async()=>response({contacts:[contact()],pagination:{page:1,page_size:25,total:1,total_pages:1}}));
+  assert.equal((await valid.getContacts('',false,{page:1,page_size:25})).contacts.length,1);
+});
+
+test('deleting the final last-page row clamps to a valid page and updates totals', async () => {
+  let rows=pageRecords(26);
+  const elements=render(async()=>rows,undefined,undefined,async id=>{rows=rows.filter(r=>r.id!==id);});
+  await settle(); elements['next-page'].listeners.click(); await settle();
+  deleteCardButton(elements).listeners.click(); await confirmDeletion(elements);
+  assert.equal(elements['page-indicator'].textContent,'Page 1 of 1');
+  assert.equal(elements['contact-count'].textContent,'25');
+  assert.equal(elements['contact-list'].children.length,25);
+});
+test('removing a favorite on the last filtered page clamps and preserves filtering', async () => {
+  let rows=pageRecords(26).map(r=>({...r,favorite:true}));
+  const elements=render(async(q,f)=>f?rows.filter(r=>r.favorite):rows,undefined,undefined,undefined,undefined,async(id,favorite)=>{
+    rows=rows.map(r=>r.id===id?{...r,favorite}:r); return rows.find(r=>r.id===id);
+  });
+  await settle(); elements['nav-favorites'].listeners.click(); await settle();
+  elements['next-page'].listeners.click(); await settle();
+  await favoriteCardButton(elements).listeners.click();
+  assert.equal(elements['page-indicator'].textContent,'Page 1 of 1');
+  assert.equal(elements['contact-count'].textContent,'25');
+});
+test('renaming can move a record off the current page without losing total count', async () => {
+  let rows=pageRecords(26);
+  const elements=render(async()=>rows,undefined,async(id,data)=>{
+    rows=rows.map(r=>r.id===id?{...r,...data}:r); return rows.find(r=>r.id===id);
+  });
+  await settle(); elements['next-page'].listeners.click(); await settle();
+  editButton(elements).listeners.click(); elements['contact-name'].value='AAA Renamed'; await submit(elements);
+  assert.equal(elements['contact-count'].textContent,'26');
+  assert.equal(elements['page-indicator'].textContent,'Page 2 of 2');
+  assert.notEqual(rowPart(elements,'contact-name').textContent,'AAA Renamed');
 });

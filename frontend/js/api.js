@@ -123,7 +123,7 @@ window.ContactHubAPI = {
       clearTimeout(timeout);
     }
   },
-  async getContacts(search = "", favoritesOnly = false) {
+  async getContacts(search = "", favoritesOnly = false, pagination = null) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -131,6 +131,7 @@ window.ContactHubAPI = {
       const parameters = [];
       if (query) parameters.push(`search=${encodeURIComponent(query)}`);
       if (favoritesOnly) parameters.push("favorite=true");
+      if (pagination) parameters.push(`page=${pagination.page}`, `page_size=${pagination.page_size}`);
       const url = "/api/contacts" + (parameters.length ? `?${parameters.join("&")}` : "");
       const response = await fetch(url, {
         headers: { Accept: "application/json" },
@@ -143,6 +144,17 @@ window.ContactHubAPI = {
       const data = await response.json();
       if (!data || !Array.isArray(data.contacts) || !data.contacts.every(isContact)) {
         throw new Error("Unexpected contact data.");
+      }
+      if (pagination) {
+        const meta = data.pagination;
+        if (!meta || ![meta.page, meta.page_size, meta.total, meta.total_pages].every(Number.isSafeInteger)
+          || meta.page < 1 || meta.page > Math.max(1, meta.total_pages)
+          || meta.page_size !== pagination.page_size || ![25, 50].includes(meta.page_size)
+          || meta.total < 0 || meta.total_pages !== Math.ceil(meta.total / meta.page_size)
+          || data.contacts.length !== Math.min(meta.page_size, Math.max(0, meta.total - (meta.page - 1) * meta.page_size))) {
+          throw new Error("Unexpected pagination data.");
+        }
+        return data;
       }
       return data.contacts;
     } finally {
