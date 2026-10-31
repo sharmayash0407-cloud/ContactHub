@@ -12,7 +12,7 @@ ContactHub is a full-stack contact management application built with Flask, SQLi
 
 ## Implemented features
 
-- **Contact CRUD:** create and edit labeled fields, browse alphabetical cards, and delete only after a named confirmation.
+- **Contact CRUD:** create and edit labeled fields, browse alphabetical rows, and delete only after a named confirmation.
 - **Persistent storage:** SQLite stores names, phone numbers, email addresses, companies, notes, favorites, and timestamps.
 - **Backend-powered search:** partial matches across name, phone, email, and company, with a 300 ms frontend debounce and stale-response protection.
 - **Favorites:** accessible star buttons, an All Contacts/Favorites view switch, and search within Favorites.
@@ -21,6 +21,14 @@ ContactHub is a full-stack contact management application built with Flask, SQLi
 - **Keyboard support:** labeled forms, native modal dialogs, visible focus, Escape/cancel behavior, unsaved-change confirmation, and focus restoration.
 
 ## Screenshots
+
+The v1.1 table milestone replaces desktop cards with a semantic six-column table (Name, Company, Email, Phone, Favorite, Actions). At widths up to 1100px the same rows stack with field labels and touch-friendly actions; no duplicate mobile data or requests are used. Existing CRUD, search, favorites, dialogs and status handling remain intact. Pagination and interactive sorting are not included.
+
+![Responsive desktop contact table with fictional contacts](docs/screenshots/responsive-table-desktop.jpg)
+
+![Compact mobile contact rows with fictional contacts](docs/screenshots/responsive-table-mobile.jpg)
+
+The gallery below preserves the original v1 card interface and dialogs for historical context.
 
 These are real captures of the working Flask application, not mockups. All names and companies are fictional, email addresses use `example.invalid`, and phone numbers are placeholders. The screenshots used a separate disposable SQLite database; no personal contact data or demo database is included in the repository.
 
@@ -192,7 +200,7 @@ Virtual environments, generated databases, caches, and secret files remain exclu
 - Search case-insensitivity is limited to ASCII. Phone searches match stored formatting.
 - No undo for deletion. Interrupted responses can leave mutation outcomes uncertain; the UI explains when to reload before retrying.
 - Unsaved form data and selected views/search reset on page reload; contacts and favorite status persist.
-- No pagination, automatic polling, or large-dataset performance verification.
+- No pagination or automatic polling. The table has been manually checked with 500 synthetic records; larger datasets and sustained performance benchmarks remain unverified.
 - Spoken screen-reader output, other browser engines, physical mobile devices, and high zoom remain additional manual checks.
 
 Possible future work includes those manual checks and small improvements based on reproducible findings. No unimplemented feature is presented as part of v1.

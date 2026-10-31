@@ -2,6 +2,7 @@
 
 (() => {
   const region = document.getElementById("contacts-region");
+  const table = document.getElementById("contact-table");
   const list = document.getElementById("contact-list");
   const state = document.getElementById("directory-state");
   const title = document.getElementById("state-title");
@@ -32,53 +33,61 @@
     return node;
   }
 
-  function contactCard(contact) {
-    const item = document.createElement("li");
-    const card = element("article", "contact-card");
-    const top = element("div", "card-top");
+  function contactRow(contact) {
+    const row = element("tr", "contact-row");
+    const nameCell = element("th", "name-cell");
+    nameCell.setAttribute("scope", "row");
+    const identity = element("div", "contact-identity");
     const words = contact.name.trim().split(/\s+/u);
     const initials = [words[0], ...(words.length > 1 ? [words[words.length - 1]] : [])]
       .map((word) => Array.from(word)[0]).join("").toLocaleUpperCase();
     const avatar = element("span", "avatar", initials);
     avatar.setAttribute("aria-hidden", "true");
-    top.append(avatar);
+    identity.append(avatar, element("h3", "contact-name", contact.name));
+    nameCell.append(identity);
+    row.append(nameCell);
+    for (const [label, value] of [["Company", contact.company], ["Email", contact.email], ["Phone", contact.phone]]) {
+      const cell = element("td", "contact-value", value || "Not provided");
+      cell.setAttribute("data-label", label);
+      row.append(cell);
+    }
     const favoriteButton = element("button", "favorite-toggle", contact.favorite ? "★" : "☆");
     favoriteButton.type = "button";
     favoriteButton.setAttribute("aria-label", `Favorite ${contact.name}`);
     favoriteButton.setAttribute("aria-pressed", String(contact.favorite));
     favoriteButton.disabled = pendingFavorites.has(contact.id);
     favoriteButtons.set(contact.id, favoriteButton);
-    top.append(favoriteButton);
-    card.append(top, element("h3", "contact-name", contact.name),
-      element("p", "contact-company", contact.company || "No company listed"));
-    const details = element("dl", "contact-details");
-    for (const [label, value] of [["Phone", contact.phone], ["Email", contact.email]]) {
-      const row = element("div", "detail");
-      row.append(element("dt", "", label), element("dd", "", value || "Not provided"));
-      details.append(row);
-    }
-    card.append(details);
+    const favoriteCell = element("td", "favorite-cell");
+    favoriteCell.setAttribute("data-label", "Favorite");
+    favoriteCell.append(favoriteButton);
+    row.append(favoriteCell);
     const editButton = element("button", "edit-button", "Edit");
     editButton.type = "button";
     editButton.setAttribute("aria-label", `Edit ${contact.name}`);
     editButton.addEventListener("click", () => openForm(contact, editButton));
     editButtons.set(contact.id, editButton);
-    card.append(editButton);
+
     const deleteButton = element("button", "delete-button", "Delete");
     deleteButton.type = "button";
     deleteButton.setAttribute("aria-label", `Delete ${contact.name}`);
     deleteButton.addEventListener("click", () => openDelete(contact, deleteButton));
-    card.append(deleteButton);
+
     contactActions.set(contact.id, [editButton, deleteButton]);
     editButton.disabled = deleteButton.disabled = pendingFavorites.has(contact.id);
     favoriteButton.addEventListener("click", () => toggleFavorite(contact, favoriteButton, editButton, deleteButton));
-    item.append(card);
-    return item;
+    const actions = element("td", "contact-actions");
+    actions.setAttribute("data-label", "Actions");
+    const controls = element("div", "row-actions");
+    controls.append(editButton, deleteButton);
+    actions.append(controls);
+    row.append(actions);
+    return row;
   }
 
   function showState(heading, message, isError = false) {
     state.hidden = false;
     list.hidden = true;
+    table.hidden = true;
     title.textContent = heading;
     description.textContent = message;
     retry.hidden = !isError;
@@ -114,10 +123,11 @@
         else if (onlyFavorites) showState("No favorites yet", "Mark a contact with the star button to find it here. Your other contacts are available in All Contacts.");
         else showState("Your connections start here", "No contacts yet. Saved contacts will appear here when they’re available.");
       } else {
-        const cards = document.createDocumentFragment();
-        contacts.forEach((contact) => cards.append(contactCard(contact)));
-        list.append(cards);
+        const rows = document.createDocumentFragment();
+        contacts.forEach((contact) => rows.append(contactRow(contact)));
+        list.append(rows);
         list.hidden = false;
+        table.hidden = false;
         state.hidden = true;
         // The separate search-results status announces the count; this names the directory.
         region.setAttribute("aria-label", `Contact directory, ${contacts.length} contacts`);
@@ -205,7 +215,7 @@
     } finally {
       pendingFavorites.delete(contact.id);
       button.disabled = editButton.disabled = deleteButton.disabled = false;
-      // Navigation can replace a card while its PATCH is pending.
+      // Navigation can replace a row while its PATCH is pending.
       const currentButton = favoriteButtons.get(contact.id);
       if (currentButton) currentButton.disabled = false;
       for (const action of contactActions.get(contact.id) || []) action.disabled = false;
@@ -385,7 +395,7 @@
     notice.textContent = refreshed ? `Contact ${action} successfully. Your connections are up to date.`
       : `Contact ${action} successfully, but the list couldn’t refresh. Use Try again to reload your connections; don’t submit the contact again.`;
     if (updatingId !== null) {
-      // Refresh replaces card nodes; focus the replacement Edit button, or a safe fallback.
+      // Refresh replaces row nodes; focus the replacement Edit button, or a safe fallback.
       ((refreshed && editButtons.get(updatingId)) || addButton).focus();
     }
   });

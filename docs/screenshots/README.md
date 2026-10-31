@@ -17,3 +17,12 @@ The capture tool returned JPEG bytes; files use matching `.jpg` extensions. Nati
 No contact was created or edited through the screenshot dialogs. They were opened and cancelled; the demonstration records came only from the disposable fixture. This fixture and its database are not part of the application startup or the tracked source.
 
 [Back to the portfolio README](../../README.md)
+
+## v1.1 responsive table milestone — 31 October 2026
+
+- `responsive-table-desktop.jpg`: actual browser capture requested at 1440×900; semantic table with 500 fictional seeded contacts.
+- `responsive-table-mobile.jpg`: actual browser capture requested at 390×844; the same records and controls in stacked rows.
+
+These two captures used a separate disposable SQLite database, not the development database. An additional synthetic long-name/email fixture was created, edited, favorited and deleted during checks; the database returned to 500 records before the mobile capture. No real contact information is present. These screenshots document the table milestone; the original gallery above documents v1 cards.
+
+Browser checks covered 1440×900, 768×1024, 390×844 and 320×568 without horizontal page overflow. A sampled desktop row measured 56.4 CSS pixels high. Scrolling, search, favorites, create/edit/delete, Escape and focus restoration were checked. No console errors were observed. Rendering duration and frame rate were not separately measured. Screen-reader speech and other browser engines remain unverified.

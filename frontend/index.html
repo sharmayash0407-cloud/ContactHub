@@ -35,7 +35,12 @@
       <p id="save-notice" class="save-notice" role="status" aria-live="polite" aria-atomic="true"></p>
       <section id="contacts-region" aria-label="Contact directory" aria-busy="true">
         <div id="directory-state" class="directory-state" role="status" aria-live="polite"><span class="state-icon" aria-hidden="true">◎</span><h2 id="state-title">Loading your contacts…</h2><p id="state-description">Getting your connections ready.</p><button id="retry-button" type="button" hidden>Try again</button></div>
-        <ul id="contact-list" class="contact-grid" hidden></ul>
+        <table id="contact-table" class="contact-table" hidden>
+          <caption class="visually-hidden">Contacts ordered alphabetically by name</caption>
+          <colgroup><col class="col-name"><col class="col-company"><col class="col-email"><col class="col-phone"><col class="col-favorite"><col class="col-actions"></colgroup>
+          <thead><tr><th scope="col">Name</th><th scope="col">Company</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Favorite</th><th scope="col">Actions</th></tr></thead>
+          <tbody id="contact-list" hidden></tbody>
+        </table>
       </section>
       <noscript><p class="noscript-note">Enable JavaScript to load contacts from ContactHub.</p></noscript>
       <footer class="page-footer"><span>Made for meaningful connections.</span><span>ContactHub</span></footer>

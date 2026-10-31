@@ -132,22 +132,25 @@ test('loading is shown until the request completes, then empty state and zero co
   assert.equal(elements['contacts-region'].attributes['aria-busy'], 'false');
 });
 
-test('cards sort by name, use literal text, show initials, fallback values and favorite indicators', async () => {
+const findClass = (node, name) => node.className === name ? node : node.children.map(child => findClass(child, name)).find(Boolean);
+const rowPart = (elements, name, index = 0) => findClass(elements['contact-list'].children[index], name);
+test('semantic rows sort safely and expose six cells, initials and favorite state', async () => {
   const unsafe = '<img src=x onerror=alert(1)>';
-  const elements = render(async () => [contact({ id: 2, name: 'Zeta Example' }),
-    contact({ name: 'Alpha Example', company: unsafe, favorite: true })]);
+  const elements = render(async () => [contact({ id: 2, name: 'Zeta Example' }), contact({ name: 'Alpha Example', company: unsafe, favorite: true })]);
   await settle();
-  assert.equal(elements['contact-count'].textContent, '2');
-  assert.equal(elements['directory-state'].hidden, true);
-  const cards = elements['contact-list'].children.map((item) => item.children[0]);
-  assert.equal(cards[0].children[1].textContent, 'Alpha Example');
-  assert.equal(cards[1].children[1].textContent, 'Zeta Example');
-  assert.equal(cards[0].children[2].textContent, unsafe);
-  assert.equal(cards[0].children[0].children[0].textContent, 'AE');
-  assert.equal(cards[0].children[0].children[1].attributes['aria-pressed'], 'true');
-  assert.equal(cards[1].children[0].children[1].attributes['aria-pressed'], 'false');
-  assert.equal(cards[1].children[2].textContent, 'No company listed');
-  assert.equal(cards[0].children[3].children[0].children[1].textContent, 'Not provided');
+  const rows = elements['contact-list'].children;
+  assert.equal(rows[0].tagName, 'tr');
+  assert.equal(rows[0].children.length, 6);
+  assert.equal(rows[0].children[0].tagName, 'th');
+  assert.equal(rows[0].children[0].attributes.scope, 'row');
+  assert.equal(rowPart(elements, 'contact-name').textContent, 'Alpha Example');
+  assert.equal(rowPart(elements, 'contact-name', 1).textContent, 'Zeta Example');
+  assert.equal(rows[0].children[1].textContent, unsafe);
+  assert.equal(rowPart(elements, 'avatar').textContent, 'AE');
+  assert.equal(rowPart(elements, 'favorite-toggle').attributes['aria-pressed'], 'true');
+  assert.equal(rows[1].children[1].textContent, 'Not provided');
+  assert.equal(rows[0].children[3].textContent, 'Not provided');
+  assert.equal(elements['contact-table'].hidden, false);
 });
 
 test('error state does not disclose raw errors and retry fetches successfully', async () => {
@@ -237,7 +240,7 @@ for (const favorite of [false, true]) {
     assert.equal(elements['contact-dialog'].open, false);
     assert.equal(elements['contact-name'].value, '');
     assert.equal(elements['contact-count'].textContent, '2');
-    assert.equal(elements['contact-list'].children[0].children[0].children[1].textContent, 'Alpha Example');
+    assert.equal(rowPart(elements, 'contact-name').textContent, 'Alpha Example');
     assert.match(elements['save-notice'].textContent, /saved successfully/);
   });
 }
@@ -343,10 +346,7 @@ for (const [label, reply] of [
   });
 }
 // Edit uses the same form and validation; locate buttons from the rendered cards.
-const editButton = (elements, index = 0) => {
-  const card = elements['contact-list'].children[index].children[0];
-  return card.children.find((node) => node.className === 'edit-button');
-};
+const editButton = (elements, index = 0) => rowPart(elements, 'edit-button', index);
 
 test('Edit prepopulates every field and unchanged Cancel restores the triggering button without confirmation', async () => {
   const existing = contact({ notes: 'Synthetic notes', phone: '+44 0000', company: 'Example', favorite: true });
@@ -393,9 +393,9 @@ test('valid Edit sends only selected ID and full data, reorders cards and preser
   assert.equal(sent.data.favorite, false);
   assert.deepEqual(records[1], untouched);
   assert.equal(elements['contact-count'].textContent, '2');
-  const firstCard = elements['contact-list'].children[0].children[0];
-  assert.equal(firstCard.children[1].textContent, 'Alpha Updated');
-  assert.equal(firstCard.children[0].children[1].attributes['aria-pressed'], 'false');
+  const firstCard = elements['contact-list'].children[0];
+  assert.equal(findClass(firstCard, 'contact-name').textContent, 'Alpha Updated');
+  assert.equal(findClass(firstCard, 'favorite-toggle').attributes['aria-pressed'], 'false');
   assert.match(elements['save-notice'].textContent, /updated successfully/);
   assert.equal(elements['contact-dialog'].open, false);
   assert.equal(editButton(elements).focused, true);
@@ -530,8 +530,7 @@ for (const [label, reply] of [
 test('PUT propagates network failure', async () => {
   await assert.rejects(apiContext(async () => { throw new TypeError('offline'); }).updateContact(1, contact()));
 });
-const deleteCardButton = (elements, index = 0) => elements['contact-list'].children[index].children[0].children
-  .find((node) => node.className === 'delete-button');
+const deleteCardButton = (elements, index = 0) => rowPart(elements, 'delete-button', index);
 const confirmDeletion = (elements) => elements['confirm-delete'].listeners.click();
 
 test('Delete opens a named confirmation with Cancel focused and never requests deletion on open', async () => {
@@ -775,7 +774,7 @@ test('older success cannot replace current query even during the debounce gap', 
   clock.run();
   await settle();
   assert.equal(elements['contact-count'].textContent, '1');
-  assert.equal(elements['contact-list'].children[0].children[0].children[1].textContent, 'Alpha Synthetic');
+  assert.equal(rowPart(elements, 'contact-name').textContent, 'Alpha Synthetic');
 });
 
 test('out-of-order search responses keep the latest results and count', async () => {
@@ -804,7 +803,7 @@ test('search results sort alphabetically and use backend results rather than fil
   assert.equal(elements['contact-count'].textContent, '2');
   assert.equal(elements['count-label'].textContent, 'Matching contacts');
   assert.equal(elements['search-results'].textContent, '2 results for “remote”');
-  assert.equal(elements['contact-list'].children[0].children[0].children[1].textContent, 'Alpha Remote');
+  assert.equal(rowPart(elements, 'contact-name').textContent, 'Alpha Remote');
 });
 
 test('no search matches differs from empty database and query text remains literal', async () => {
@@ -930,7 +929,7 @@ for (const operation of ['edit', 'delete']) {
     assert.equal(elements['state-title'].textContent, 'No matching contacts');
   });
 }
-const favoriteCardButton = (elements, index = 0) => elements['contact-list'].children[index].children[0].children[0].children[1];
+const favoriteCardButton = (elements, index = 0) => rowPart(elements, 'favorite-toggle', index);
 
 test('favorite PATCH sends only a strict boolean to the selected ID', async () => {
   const api = apiContext(async (url, options) => {
@@ -1145,4 +1144,31 @@ test('quality: retry restores focus to the search input when its button disappea
   await settle();
   await elements['retry-button'].listeners.click();
   assert.equal(elements['contact-search'].focused, true);
+});
+
+test('500 contacts use one request and one set of row controls', async () => {
+  let reads = 0;
+  const elements = render(async () => { reads++; return Array.from({ length: 500 }, (_, i) => contact({ id: i + 1, name: `Fixture ${String(i).padStart(3, '0')}` })); });
+  await settle();
+  assert.equal(reads, 1);
+  assert.equal(elements['contact-list'].children.length, 500);
+  assert.equal(elements['contact-count'].textContent, '500');
+  for (const row of elements['contact-list'].children) {
+    assert.equal(row.children.length, 6);
+    assert.ok(findClass(row, 'edit-button'));
+    assert.ok(findClass(row, 'delete-button'));
+    assert.ok(findClass(row, 'favorite-toggle'));
+  }
+});
+
+test('table headers stay hidden during loading, empty and error states', async () => {
+  let complete;
+  const elements = render(() => new Promise(resolve => { complete = resolve; }));
+  assert.equal(elements['contact-table'].hidden, true);
+  complete([]);
+  await settle();
+  assert.equal(elements['contact-table'].hidden, true);
+  const failed = render(async () => { throw new Error('offline'); });
+  await settle();
+  assert.equal(failed['contact-table'].hidden, true);
 });

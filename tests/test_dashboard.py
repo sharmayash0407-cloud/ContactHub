@@ -10,9 +10,12 @@ class PageParser(HTMLParser):
         self.scripts = []
         self.ids = set()
         self.fields = {}
+        self.column_headers = []
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
+        if tag == "th":
+            self.column_headers.append(values.get("scope"))
         if tag == "script":
             self.scripts.append(values.get("src"))
         if "id" in values:
@@ -27,6 +30,8 @@ def test_dashboard_and_api_share_the_flask_origin(tmp_path):
     assert page.status_code == 200
     parser = PageParser()
     parser.feed(page.get_data(as_text=True))
+    assert parser.column_headers == ["col"] * 6
+    assert "contact-table" in parser.ids
     assert parser.scripts == ["/static/js/api.js", "/static/js/app.js"]
     assert {"contact-list", "contacts-region", "contact-count", "retry-button"} <= parser.ids
     assert {"search-form", "contact-search", "clear-search", "search-results", "count-label"} <= parser.ids
